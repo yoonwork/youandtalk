@@ -1369,6 +1369,8 @@ $('#qdayDate').textContent = (new Date().getMonth() + 1) + '월 ' + new Date().g
       S.uid = session.user.id; S.anon = !!session.user.is_anonymous;
       const { data } = await sb.from('profiles').select('*').maybeSingle();
       if (data) { S.me = data; await afterLogin(); return; }
+      // 세션은 남았는데 프로필이 없음 = 지워진 계정(테스트 정리, 운영 삭제 등). 버리고 처음부터
+      await sb.auth.signOut(); S.uid = null; S.anon = true;
     }
   } catch (e) { console.warn(e); }
   show('#v-gate');
