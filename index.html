@@ -980,12 +980,36 @@ $('#sLogin').onclick = () => {
     ? '처음부터 다시 시작할까요?\n로그인하지 않은 상태라 지금까지의 대화와 친구는 사라지고 다시 찾을 수 없어요.'
     : '처음부터 다시 시작할까요?\n로그아웃되고 첫 화면으로 돌아가요. 다시 로그인하면 친구·포인트·이야기 글은 그대로 있어요.');
 }
-// 카카오·구글 로그인: 지금 쓰는 익명 계정에 연결(linkIdentity)해서 대화·방이 그대로 이어지게
-async function snsLogin(provider) {
+// 카카오·구글 로그인: 지금 쓰는 익명 계정에 연결(linkIdentity)해서 대화·방이 그대로 이어지게.
+// 그 카카오·구글이 이미 다른 회원 계정에 붙어 있으면(다른 기기에서 가입한 회원) 돌아온 뒤 그 계정으로 로그인한다.
+const SNS_KEY = 'youandtalk-sns';
+const snsOpts = provider => ({ provider, options: { redirectTo: location.origin + location.pathname } });
+async function snsLogin(provider, forceSignIn) {
   $('#loginSheet').hidden = true;
-  const opts = { provider, options: { redirectTo: location.href.split('#')[0] } };
-  const { error } = S.uid ? await sb.auth.linkIdentity(opts) : await sb.auth.signInWithOAuth(opts);
-  if (error) toast(/not enabled|unsupported|provider/i.test(error.message) ? (provider === 'kakao' ? '카카오' : '구글') + ' 로그인은 곧 열려요' : errMsg(error));
+  storage.setItem(SNS_KEY, provider);
+  const { error } = S.uid && !forceSignIn ? await sb.auth.linkIdentity(snsOpts(provider)) : await sb.auth.signInWithOAuth(snsOpts(provider));
+  if (error) { storage.removeItem(SNS_KEY); toast(/not enabled|unsupported|provider/i.test(error.message) ? (provider === 'kakao' ? '카카오' : '구글') + ' 로그인은 곧 열려요' : errMsg(error)); }
+  return error;
+}
+// 로그인하고 돌아온 주소(#access_token=… 또는 #error=…)를 처리하고 주소창을 깨끗이 한다.
+// supabase-js 가 주소의 토큰을 먼저 읽어야 하므로 getSession(초기화 완료)을 기다린 뒤에 지운다.
+async function handleOAuthReturn() {
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (!h.has('access_token') && !h.has('error') && !h.has('error_description')) return;
+  try { await sb.auth.getSession(); } catch {}
+  history.replaceState(null, '', location.pathname + location.search);
+  const provider = storage.getItem(SNS_KEY); storage.removeItem(SNS_KEY);
+  const desc = h.get('error_description') || '';
+  if (h.get('error_code') === 'identity_already_exists' || /already linked/i.test(desc)) {
+    if (provider) {
+      toast('이미 가입한 계정이에요. 그 계정으로 로그인할게요');
+      const err = await snsLogin(provider, true);
+      if (!err) await new Promise(() => {});   // 로그인 화면으로 이동 중 — 아래 시작 코드는 돌지 않게
+    }
+    return;
+  }
+  if (h.has('error')) toast(/denied|cancel/i.test(desc + h.get('error')) ? '로그인을 취소했어요' : '로그인에 실패했어요. 다시 시도해 주세요');
+  else if (provider) toast('로그인됐어요');
 }
 $('#loginKakao').onclick = () => snsLogin('kakao');
 $('#loginGoogle').onclick = () => snsLogin('google');
@@ -1364,6 +1388,7 @@ $('#qdayQ').textContent = todayQ();
 $('#qdayDate').textContent = (new Date().getMonth() + 1) + '월 ' + new Date().getDate() + '일';
 (async () => {
   try {
+    await handleOAuthReturn();
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       S.uid = session.user.id; S.anon = !!session.user.is_anonymous;
