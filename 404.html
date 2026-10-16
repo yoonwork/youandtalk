@@ -958,7 +958,28 @@ function needLogin(what) {
   $('#loginMsg').textContent = what + '은(는) 로그인한 사람만 쓸 수 있어요. 일반 채팅은 로그인 없이도 돼요.'; open('#loginSheet'); return false;
 }
 $('#loginCardBtn').onclick = () => { if (S.anon) open('#loginSheet'); };
-$('#sLogin').onclick = () => { if (S.anon) open('#loginSheet'); };
+// 로그아웃 / 처음부터 다시 시작: 서버 세션을 끊고 페이지를 새로 열면 첫 입장 화면으로 돌아감.
+// 비회원(익명)은 나가면 그 계정을 다시 찾을 수 없어서 대화·친구가 사라진다 → 한 번 더 물어봄.
+async function resetApp(msg) {
+  if (!confirm(msg)) return;
+  S.waiting = false; clearInterval(S.hb);
+  try { await sb.removeAllChannels(); } catch {}
+  try { await sb.auth.signOut(); } catch {}
+  storage.removeItem('youandtalk-auth');
+  location.reload();
+}
+$('#sLogin').onclick = () => {
+  if (S.anon) { open('#loginSheet'); return; }
+  resetApp('로그아웃할까요?\n다시 로그인하면 친구·포인트·이야기 글은 그대로 있어요.');
+};
+{ // 마이페이지 맨 아래 "처음부터 다시 시작" 줄 (화면 파일은 그대로 두고 여기서 넣음)
+  const li = document.createElement('li');
+  li.innerHTML = '<button class="row-btn" id="sReset"><span class="row-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></span><span>처음부터 다시 시작</span><em>첫 화면으로</em></button>';
+  $('#sBlocked').closest('li').after(li);
+  li.querySelector('button').onclick = () => resetApp(S.anon
+    ? '처음부터 다시 시작할까요?\n로그인하지 않은 상태라 지금까지의 대화와 친구는 사라지고 다시 찾을 수 없어요.'
+    : '처음부터 다시 시작할까요?\n로그아웃되고 첫 화면으로 돌아가요. 다시 로그인하면 친구·포인트·이야기 글은 그대로 있어요.');
+}
 // 카카오·구글 로그인: 지금 쓰는 익명 계정에 연결(linkIdentity)해서 대화·방이 그대로 이어지게
 async function snsLogin(provider) {
   $('#loginSheet').hidden = true;
@@ -1265,18 +1286,74 @@ $('#swatches').addEventListener('click', e => { const b = e.target.closest('butt
 const themes = ['기기 설정', '밝게', '어둡게']; let ti = 0;
 $('#sTheme').onclick = () => { ti = (ti + 1) % 3; const r = document.documentElement; if (ti === 0) r.removeAttribute('data-theme'); else r.setAttribute('data-theme', ti === 1 ? 'light' : 'dark'); $('#sThemeState').textContent = themes[ti]; };
 
-// ── 이야기 탭 (서버 연결 전: 로그인 기능이 열리면 함께 연결) ─────
-function renderBoard() {
+// ── 이야기 탭 (게시판): 로그인한 회원만 읽고 쓴다. 서버 표 posts / 함수 create_post·toggle_like·report_post·delete_post ──
+// 실시간 구독은 안 함. 탭을 열거나 게시판을 바꿀 때마다 최신 50개를 다시 불러온다.
+const BANNED = /(카톡|카카오|텔레|오픈채팅|오픈챗|인스타|디엠|\bdm\b|https?:|www\.|\.(com|net|kr|me|io|link)\b|조건|만남|만나요|용돈|스폰|\d{3,4}[- .]?\d{4})/i;
+const POST_COLORS = ['#CDEFD9', '#D6E4FF', '#FFE1CC', '#E8DAFF', '#FFD6E5', '#CDEEF0'];
+const nameColor = n => POST_COLORS[[...n].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 6, 0)];
+const ago = d => { const m = Math.floor((Date.now() - new Date(d)) / 60000); return m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.floor(m / 60) + '시간 전' : Math.floor(m / 1440) + '일 전'; };
+let boardSeq = 0;
+async function renderBoard() {
   $('#boardQ').hidden = S.board !== 'q'; $('#boardQ b').textContent = todayQ();
   const ul = $('#posts'); ul.innerHTML = '';
-  const li = document.createElement('li'); li.className = 'lock';
-  li.innerHTML = S.anon ? '<div><b>이야기는 로그인한 사람만 볼 수 있어요</b><span>구글 로그인이 열리면 바로 쓸 수 있어요</span></div><button class="pill-btn">로그인</button>'
-    : '<div><b>이야기는 곧 열려요</b><span>오늘의 질문에 답하고 다른 사람 생각도 구경할 수 있어요</span></div>';
-  li.querySelector('button')?.addEventListener('click', () => open('#loginSheet')); ul.appendChild(li);
+  if (S.anon) { const li = document.createElement('li'); li.className = 'lock';
+    li.innerHTML = '<div><b>이야기는 로그인한 사람만 볼 수 있어요</b><span>오늘의 질문에 답하고 다른 사람 생각도 구경해 보세요</span></div><button class="pill-btn">로그인</button>';
+    li.querySelector('button').onclick = () => { $('#loginMsg').textContent = '이야기를 읽고 쓰려면 로그인해 주세요.'; open('#loginSheet'); };
+    ul.appendChild(li); return; }
+  const seq = ++boardSeq;
+  ul.insertAdjacentHTML('beforeend', '<li class="empty">불러오는 중…</li>');
+  const [{ data: posts, error }, { data: likes }] = await Promise.all([
+    sb.from('posts').select('id, author_id, board, body, display_name, likes_count, created_at').eq('board', S.board).order('id', { ascending: false }).limit(50),
+    sb.from('post_likes').select('post_id')]);
+  if (seq !== boardSeq) return;                     // 그새 다른 게시판을 열었으면 이 결과는 버림
+  ul.innerHTML = '';
+  if (error) { ul.insertAdjacentHTML('beforeend', '<li class="empty">' + errMsg(error) + '</li>'); return; }
+  if (!posts?.length) { ul.insertAdjacentHTML('beforeend', '<li class="empty">첫 이야기를 남겨 보세요</li>'); return; }
+  const liked = new Set((likes || []).map(x => x.post_id));
+  posts.forEach(p => {
+    const mine = p.author_id === S.uid, li = document.createElement('li'); li.className = 'post';
+    li.innerHTML = '<div class="post-h"><span class="av"></span><b></b><span>' + ago(p.created_at) + '</span><button class="more" aria-label="' + (mine ? '내 글 지우기' : '신고하기') + '"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div><p></p><div class="post-a"><button class="like" aria-pressed="' + liked.has(p.id) + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>공감 <span>' + p.likes_count + '</span></button></div>';
+    const av = li.querySelector('.av'); av.textContent = p.display_name[0]; av.style.background = nameColor(p.display_name);
+    li.querySelector('b').textContent = mine ? p.display_name + ' (나)' : p.display_name; li.querySelector('p').textContent = p.body;
+    const likeBtn = li.querySelector('.like');
+    likeBtn.onclick = async () => {
+      likeBtn.disabled = true;
+      const { data, error } = await sb.rpc('toggle_like', { p_post: p.id }); likeBtn.disabled = false;
+      if (error) { toast(errMsg(error)); if ((error.message || '').includes('BAD_INPUT')) renderBoard(); return; }
+      likeBtn.setAttribute('aria-pressed', data.liked); likeBtn.querySelector('span').textContent = data.likes_count;
+    };
+    li.querySelector('.more').onclick = async () => {
+      if (mine) {
+        if (!confirm('이 글을 지울까요?')) return;
+        const { error } = await sb.rpc('delete_post', { p_post: p.id });
+        if (error) toast(errMsg(error)); else { toast('지웠어요'); renderBoard(); }
+        return;
+      }
+      if (!confirm('이 글을 신고할까요? 신고가 쌓이면 글이 숨겨져요.')) return;
+      const { data, error } = await sb.rpc('report_post', { p_post: p.id });
+      if (error) { toast(errMsg(error)); return; }
+      if (data) { li.remove(); toast('신고했어요. 이 글은 이제 안 보여요'); } else toast('신고했어요. 확인해 볼게요');
+    };
+    ul.appendChild(li);
+  });
 }
 $('#boardTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.board = b.dataset.b;
   $$('#boardTabs button').forEach(x => x.setAttribute('aria-pressed', x === b)); renderBoard(); });
-$('#writeBtn').onclick = () => { if (needLogin('이야기 쓰기')) toast('이야기는 곧 열려요'); };
+$('#writeBtn').onclick = () => { if (!needLogin('이야기 쓰기')) return;
+  $('#wT').textContent = S.board === 'q' ? '오늘의 질문에 답하기' : '자유롭게 쓰기'; $('#wQ').textContent = S.board === 'q' ? todayQ() : '';
+  $('#writeText').value = ''; $('#writeErr').hidden = true; $('#writeConfirm').disabled = false; open('#writeSheet'); setTimeout(() => $('#writeText').focus(), 50); };
+$('#writeText').addEventListener('input', () => $('#writeErr').hidden = true);
+$('#writeConfirm').onclick = async () => {
+  const t = $('#writeText').value.trim(), err = $('#writeErr'), btn = $('#writeConfirm');
+  const fail = m => { err.textContent = m; err.hidden = false; };
+  if (t.length < 2) return fail('두 글자 이상 적어 주세요');
+  if (t.length > 300) return fail('300자까지만 올릴 수 있어요');
+  if (BANNED.test(t)) return fail('연락처·외부 링크·만남 제안이 들어간 글은 올릴 수 없어요');
+  btn.disabled = true;
+  const { error } = await sb.rpc('create_post', { p_board: S.board, p_body: t }); btn.disabled = false;
+  if (error) return fail((error.message || '').includes('BAD_INPUT') ? '연락처·외부 링크·만남 제안이 들어간 글은 올릴 수 없어요' : errMsg(error));
+  $('#writeSheet').hidden = true; toast('올렸어요'); renderBoard();
+};
 
 // ── 시작 ─────────────────────────────────────────────────
 async function afterLogin() {
