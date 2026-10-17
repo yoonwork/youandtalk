@@ -1039,7 +1039,7 @@ function updPaid() {}   // (예전 '이성만' 버튼 문구) 이제 누구나·
 function setLoginUI() {
   const on = !S.anon;
   $('#loginCardBtn').textContent = on ? '로그인됨' : '로그인'; $('#loginCardBtn').classList.toggle('on', on);
-  $('#loginText').innerHTML = on ? '<b>로그인됨</b>커뮤니티를 쓸 수 있어요. 사진·친구 추가는 앱에서 포인트로 할 수 있어요'
+  $('#loginText').innerHTML = on ? '<b>로그인됨</b>커뮤니티를 쓸 수 있어요. 포인트로 남자·여자 골라 만나기, 사진, 친구 추가를 할 수 있어요'
     : '<b>로그인 없이 바로 대화할 수 있어요</b>로그인하면 커뮤니티를 쓸 수 있어요';
   $$('#wantSeg small.pt').forEach(x => x.hidden = !on);                                        // 남자·여자 "10P" 는 회원에게만
   const fe = $('#mFriend em'); if (fe) fe.hidden = !on;                                        // "20P"
@@ -1144,9 +1144,45 @@ $('#loginNote').textContent = '로그인해도 지금까지의 대화는 그대�
 // 포인트는 회원(로그인한 사람)만 — 비회원은 받지도 쓰지도 않음
 $('#ptsBtn').onclick = $('#sPoints').onclick = () => {
   if (S.anon) { $('#loginMsg').textContent = '포인트는 로그인한 회원만 받고 쓸 수 있어요. 일반 채팅은 로그인 없이도 무료예요.'; open('#loginSheet'); return; }
-  $('#shopMsg').textContent = '포인트 충전은 앱에서 할 수 있어요. 앱은 준비 중이에요.'; open('#shopSheet');
+  openShop('');
 };
-$$('#shopSheet [data-add]').forEach(b => { b.hidden = true; b.onclick = () => toast('포인트 충전은 앱에서 할 수 있어요 (준비 중)'); });   // 웹에서는 가격 버튼 숨김
+// ── 포인트 충전 (웹: 토스페이먼츠 결제창, 019_payments.sql · Edge Function pay-confirm) ──
+// 지금은 토스 문서용 "테스트 키" → 결제창은 뜨지만 실제 돈은 나가지 않음. 토스와 계약하면 실제 키로 바꿈.
+const TOSS_CLIENT_KEY = 'test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq';
+const TOSS_TEST = TOSS_CLIENT_KEY.startsWith('test_');
+const PRODUCT_OF = { 100: 'p100', 550: 'p550', 1200: 'p1200' };
+function openShop(why) {
+  if (IS_APP) { $('#shopMsg').textContent = (why ? why + ' ' : '') + '앱의 포인트 충전은 준비 중이에요.'; $$('#shopSheet [data-add]').forEach(b => b.hidden = true); open('#shopSheet'); return; }
+  $('#shopMsg').textContent = (why ? why + ' ' : '') + '결제는 토스페이먼츠로 안전하게 처리돼요.' + (TOSS_TEST ? ' (지금은 시험 결제라 실제 돈이 나가지 않아요)' : '');
+  $$('#shopSheet [data-add]').forEach(b => b.hidden = false); open('#shopSheet');
+}
+let tossLoading = null;
+const loadToss = () => tossLoading ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://js.tosspayments.com/v2/standard'; sc.onload = ok; sc.onerror = () => { tossLoading = null; no(new Error('toss')); }; document.head.appendChild(sc); });
+$$('#shopSheet [data-add]').forEach(b => { b.hidden = true; b.onclick = async () => {
+  if (S.anon) { $('#shopSheet').hidden = true; open('#loginSheet'); return; }
+  b.disabled = true;
+  try {
+    const { data, error } = await sb.rpc('create_order', { p_product: PRODUCT_OF[b.dataset.add] });
+    if (error) return toast(errMsg(error));
+    const o = data[0];
+    await loadToss();
+    const back = location.origin + location.pathname;
+    await window.TossPayments(TOSS_CLIENT_KEY).payment({ customerKey: S.uid }).requestPayment({
+      method: 'CARD', amount: { currency: 'KRW', value: o.amount }, orderId: o.order_id, orderName: o.order_name,
+      successUrl: back + '?pay=ok', failUrl: back + '?pay=fail' });
+  } catch (e) { if (!/USER_CANCEL|취소/.test(e?.code + e?.message)) toast('결제창을 열지 못했어요. 잠시 후 다시 해 주세요'); }
+  finally { b.disabled = false; }
+}; });
+// 결제창에서 돌아왔을 때: 서버에 승인을 맡기고 포인트를 새로 고침
+async function handlePayReturn() {
+  const q = new URLSearchParams(location.search); const st = q.get('pay'); if (!st) return;
+  history.replaceState(null, '', location.pathname);
+  if (st !== 'ok') { toast(q.get('code') === 'PAY_PROCESS_CANCELED' ? '결제를 취소했어요' : '결제가 되지 않았어요' + (q.get('message') ? ': ' + q.get('message') : '')); return; }
+  toast('결제를 확인하고 있어요…');
+  const { data, error } = await sb.functions.invoke('pay-confirm', { body: { paymentKey: q.get('paymentKey'), orderId: q.get('orderId'), amount: Number(q.get('amount')) } });
+  if (error || !data || (data.status !== 'paid' && data.status !== 'already')) { toast('결제 확인에 실패했어요. 문의해 주세요 (주문번호 ' + q.get('orderId') + ')'); return; }
+  await refreshMe(); toast(data.points + 'P를 충전했어요' + (data.test ? ' (시험 결제)' : ''));
+}
 async function refreshMe() { const { data } = await sb.from('profiles').select('*').maybeSingle(); if (data) { S.me = data; setPoints(data.points); updPaid(); } }
 
 // ── 접속자 수 (presence) ──────────────────────────────────
@@ -1271,6 +1307,7 @@ function listenMine() {
 // ── 매칭 ──────────────────────────────────────────────────
 async function startMatch() {
   if (S.wantSex && !needLogin('성별 골라 만나기')) return;
+  if (S.wantSex && !needPoints(10, '남자·여자 골라 만나기')) return;
   S.waiting = true; show('#v-matching');
   $('#matchHint').textContent = S.mood ? MOODS[S.mood] + ' 하고 싶은 사람을 먼저 찾고 있어요' : S.wantSex ? (S.wantSex === 'm' ? '남자' : '여자') + '와 연결하고 있어요' : '대기 중인 사람과 연결하고 있어요';
   const { data, error } = await sb.rpc('find_match', {
@@ -1438,7 +1475,7 @@ const MEDIA = { photo: { cost: 5, bucket: 'photos', rpc: 'send_photo', word: '�
 const VIDEO_MAX_SEC = 30, VIDEO_MAX_MB = 20, VIDEO_EXT = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
 function needPoints(n, what) {
   if ((S.me?.points || 0) >= n) return true;
-  $('#shopMsg').textContent = what + '에 ' + n + 'P가 필요해요. 충전은 앱에서 할 수 있어요(준비 중).'; open('#shopSheet'); return false;
+  openShop(what + '에 ' + n + 'P가 필요해요.'); return false;
 }
 function pickPhoto() { if (!needLogin('사진·동영상 보내기') || !needPoints(MEDIA.photo.cost, '사진 보내기')) return; $('#photoInput').click(); }
 $('#plusBtn').onclick = pickPhoto; $('#camBtn').onclick = pickPhoto;
@@ -2004,7 +2041,7 @@ $('#writeConfirm').onclick = async () => {
 
 // ── 시작 ─────────────────────────────────────────────────
 async function afterLogin() {
-  await refreshMe(); setLoginUI(); listenMine(); joinLobby(); renderSide();
+  await refreshMe(); setLoginUI(); listenMine(); joinLobby(); renderSide(); handlePayReturn();
   try { await sb.realtime.setAuth(); } catch {}         // 비공개 방 채널(입력 중·통화 신호)에 내 로그인 정보를 씀
   await loadRooms();
   goTab('match');
