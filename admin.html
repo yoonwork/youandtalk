@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>유앤톡 운영</title>
+<link rel="apple-touch-icon" href="icon-512.png">
+<style>
+:root{--page:#F1F3F7;--card:#fff;--ink:#16203A;--muted:#6B7488;--line:#E3E7EF;--accent:#2F7BFF;--accent-soft:#E6EFFF;--danger:#E5484D;--danger-soft:#FDECEC;--ok:#1F9D63;--ok-soft:#E3F6EC;--lift:0 1px 2px rgba(22,34,66,.06),0 6px 20px rgba(22,34,66,.06)}
+@media (prefers-color-scheme: dark){:root{--page:#0F1420;--card:#171E2C;--ink:#E8ECF4;--muted:#98A2B5;--line:#273044;--accent-soft:#1B2B4A;--danger-soft:#3A1E22;--ok-soft:#173326;--lift:none}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.5 Pretendard,-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:880px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+header h1{font-size:20px;margin:0;flex:1}
+button{font:inherit;cursor:pointer;border:0;border-radius:12px;padding:9px 14px;background:var(--accent-soft);color:var(--accent);font-weight:700}
+button:disabled{opacity:.5;cursor:default}
+button.danger{background:var(--danger-soft);color:var(--danger)}
+button.ok{background:var(--ok-soft);color:var(--ok)}
+button.plain{background:transparent;color:var(--muted);padding:6px 8px}
+.card{background:var(--card);border-radius:18px;box-shadow:var(--lift);padding:16px;margin-bottom:12px;border:1px solid var(--line)}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:var(--lift)}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:12.5px}
+.stat.hot b{color:var(--danger)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tabs button{background:var(--card);color:var(--muted);border:1px solid var(--line)}
+.tabs button[aria-pressed="true"]{background:var(--accent);color:#fff;border-color:var(--accent)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.tag.red{background:var(--danger-soft);color:var(--danger)}
+.tag.gray{background:var(--page);color:var(--muted)}
+.meta{color:var(--muted);font-size:13px}
+.who{font-weight:700}
+.log{margin:12px 0;padding:12px;border-radius:14px;background:var(--page);display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto}
+.m{max-width:80%;padding:8px 12px;border-radius:14px;background:var(--card);border:1px solid var(--line);word-break:break-word}
+.m.reporter{align-self:flex-end;background:var(--accent-soft);border-color:transparent}
+.m small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.m.gone{border:1px dashed var(--danger)}
+.m img,.m video{max-width:240px;max-height:300px;border-radius:10px;display:block}
+textarea{width:100%;min-height:54px;font:inherit;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:var(--card);color:var(--ink);resize:vertical}
+.empty{color:var(--muted);text-align:center;padding:30px 0}
+.notice{padding:28px 20px;text-align:center}
+.notice a{color:var(--accent);font-weight:700}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#16203A;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;z-index:9;max-width:calc(100% - 32px)}
+</style>
+</head>
+<body>
+<main>
+  <header><h1>유앤톡 운영</h1><button class="plain" id="refresh" hidden>새로고침</button></header>
+  <div id="gate" class="card notice">불러오는 중…</div>
+  <div id="app" hidden>
+    <div class="stats" id="stats"></div>
+    <div class="tabs" id="tabs">
+      <button data-t="open" aria-pressed="true">처리 전 신고</button>
+      <button data-t="done" aria-pressed="false">처리한 신고</button>
+      <button data-t="banned" aria-pressed="false">정지된 사람</button>
+      <button data-t="posts" aria-pressed="false">숨겨진 이야기 글</button>
+    </div>
+    <div id="list"></div>
+  </div>
+</main>
+<div class="toast" id="toast" hidden></div>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm';
+const sb = createClient('https://glcchqvtmpgzanbgczxu.supabase.co', 'sb_publishable_Evpm_2vpWPwsuFy3-Jka5Q_rkhRXQnG',
+  { auth: { storageKey: 'youandtalk-auth', persistSession: true, detectSessionInUrl: false } });   // 유앤톡 사이트와 같은 로그인을 씀
+const $ = s => document.querySelector(s);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const REASON = { prostitution: '성매매·조건 만남', ad: '광고·외부 앱 유도', abuse: '욕설·성희롱', minor: '미성년자 의심' };
+const STATUS = { open: '처리 전', actioned: '정지함', dismissed: '문제 없음' };
+const when = d => { d = new Date(d); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+const until = d => !d ? '' : new Date(d).getFullYear() > 9000 || d === 'infinity' ? '영구 정지' : when(d) + '까지 정지';
+const sexAge = (s, a) => (s === 'm' ? '남' : '여') + ' · ' + a + '세';
+function toast(t) { const e = $('#toast'); e.textContent = t; e.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => e.hidden = true, 2600); }
+async function call(fn, args) {
+  const { data, error } = await sb.rpc(fn, args);
+  if (error) { toast(/NOT_ADMIN/.test(error.message) ? '운영자만 할 수 있어요' : '실패했어요: ' + error.message); throw error; }
+  return data;
+}
+let tab = 'open';
+
+async function start() {
+  const { data: { session } } = await sb.auth.getSession();
+  const gate = $('#gate');
+  if (!session) { gate.innerHTML = '로그인되어 있지 않아요.<br><a href="./">유앤톡</a>에서 운영자 구글 계정으로 로그인한 뒤 이 페이지를 다시 열어 주세요.'; return; }
+  const { data: isAdmin } = await sb.rpc('is_admin');
+  if (!isAdmin) { gate.innerHTML = '이 계정은 운영자가 아니에요.<br><a href="./">유앤톡</a>에서 운영자 계정으로 로그인해 주세요.'; return; }
+  gate.hidden = true; $('#app').hidden = false; $('#refresh').hidden = false;
+  await refresh();
+}
+async function refresh() { await Promise.all([loadStats(), loadTab()]); }
+$('#refresh').onclick = refresh;
+$('#tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t;
+  document.querySelectorAll('#tabs button').forEach(x => x.setAttribute('aria-pressed', x === b)); loadTab(); });
+
+async function loadStats() {
+  const s = await call('admin_overview');
+  const items = [['open_reports', '처리 전 신고', true], ['users', '이용자'], ['members', '회원'], ['users_today', '오늘 새로 온 사람'],
+    ['rooms_today', '오늘 대화방'], ['messages_today', '오늘 메시지'], ['waiting', '지금 기다리는 사람'], ['banned', '정지 중'], ['hidden_posts', '숨겨진 글'], ['withdrawn', '탈퇴 표시']];
+  const box = $('#stats'); box.innerHTML = '';
+  for (const [k, label, hot] of items) { const d = el('div', 'stat' + (hot && s[k] > 0 ? ' hot' : '')); d.append(el('b', null, (s[k] ?? 0).toLocaleString('ko-KR')), el('span', null, label)); box.append(d); }
+}
+async function loadTab() {
+  const list = $('#list'); list.innerHTML = ''; list.append(el('div', 'empty', '불러오는 중…'));
+  try {
+    if (tab === 'open' || tab === 'done') return renderReports(await call('admin_reports', { p_status: tab, p_limit: 100 }));
+    if (tab === 'banned') return renderBanned(await call('admin_banned'));
+    return renderPosts(await call('admin_hidden_posts'));
+  } catch { list.innerHTML = ''; list.append(el('div', 'empty', '불러오지 못했어요')); }
+}
+
+function renderReports(rows) {
+  const list = $('#list'); list.innerHTML = '';
+  if (!rows.length) { list.append(el('div', 'empty', tab === 'open' ? '처리할 신고가 없어요' : '처리한 신고가 없어요')); return; }
+  for (const r of rows) {
+    const c = el('div', 'card');
+    const top = el('div', 'row');
+    top.append(el('span', 'tag red', REASON[r.reason] || r.reason), el('span', 'meta', when(r.created_at)));
+    if (r.status !== 'open') top.append(el('span', 'tag gray', STATUS[r.status] || r.status));
+    const who = el('p'); who.style.margin = '10px 0 4px';
+    who.append(el('span', 'who', '신고당한 사람: ' + r.reported_name), document.createTextNode(' · ' + sexAge(r.reported_sex, r.reported_age) + ' · ' + (r.reported_member ? '회원' : '비회원') + ' · 받은 신고 ' + r.reported_total + '건'));
+    if (r.reported_banned_until) who.append(el('span', 'tag red', ' ' + until(r.reported_banned_until)));
+    if (r.reported_withdrawn) who.append(el('span', 'tag gray', ' 탈퇴함'));
+    const by = el('p', 'meta', '신고한 사람: ' + r.reporter_name + ' · 대화 ' + r.messages + '개'); by.style.margin = '0';
+    c.append(top, who, by);
+    if (r.admin_note) c.append(el('p', 'meta', '메모: ' + r.admin_note));
+    const log = el('div', 'log'); log.hidden = true;
+    const view = el('button', null, '대화 보기');
+    view.onclick = async () => {
+      if (!log.hidden) { log.hidden = true; view.textContent = '대화 보기'; return; }
+      view.disabled = true; try { await fillLog(log, r.id); log.hidden = false; view.textContent = '대화 접기'; } finally { view.disabled = false; }
+    };
+    const acts = el('div', 'row'); acts.style.marginTop = '10px'; acts.append(view);
+    c.append(log);
+    if (r.status === 'open') {
+      const note = el('textarea'); note.placeholder = '메모 (선택) — 왜 이렇게 처리했는지 남겨 두면 나중에 찾기 쉬워요'; note.style.marginTop = '10px';
+      const act = (label, action, cls) => { const b = el('button', cls, label); b.onclick = async () => {
+        if (action !== 'dismiss' && !confirm(r.reported_name + ' 님을 ' + label + '할까요?\n지금 하고 있는 대화도 끝나요.')) return;
+        b.disabled = true; try { await call('admin_resolve_report', { p_report: r.id, p_action: action, p_note: note.value.trim() || null }); toast(label + ' 처리했어요'); await refresh(); } catch { b.disabled = false; } }; return b; };
+      acts.append(act('문제 없음', 'dismiss', 'ok'), act('7일 정지', 'ban_7d', 'danger'), act('30일 정지', 'ban_30d', 'danger'), act('영구 정지', 'ban_forever', 'danger'));
+      c.append(note);
+    }
+    c.append(acts); list.append(c);
+  }
+}
+async function fillLog(log, reportId) {
+  const msgs = await call('admin_room_messages', { p_report: reportId });
+  log.innerHTML = '';
+  if (!msgs.length) { log.append(el('div', 'empty', '남은 대화가 없어요')); return; }
+  for (const m of msgs) {
+    const d = el('div', 'm ' + m.who + (m.deleted ? ' gone' : ''));
+    if (m.kind === 'photo' || m.kind === 'video') {
+      const bucket = m.kind === 'photo' ? 'photos' : 'videos';
+      const { data } = m.media_path ? await sb.storage.from(bucket).createSignedUrl(m.media_path, 600) : { data: null };
+      if (data?.signedUrl) { const media = el(m.kind === 'photo' ? 'img' : 'video'); media.src = data.signedUrl; if (m.kind === 'video') media.controls = true; else media.alt = '사진'; d.append(media); }
+      else d.append(document.createTextNode(m.kind === 'photo' ? '(사진 파일 없음)' : '(동영상 파일 없음)'));
+    } else if (m.kind === 'system') d.append(document.createTextNode(m.body?.startsWith('call:') ? '통화 기록: ' + m.body.slice(5) : '안내: ' + (m.body || '')));
+    else d.append(document.createTextNode(m.body || ''));
+    d.append(el('small', null, (m.who === 'reporter' ? '신고한 사람' : '신고당한 사람') + ' · ' + when(m.created_at) + (m.deleted ? ' · 본인이 지운 메시지' : '')));
+    log.append(d);
+  }
+}
+function renderBanned(rows) {
+  const list = $('#list'); list.innerHTML = '';
+  if (!rows.length) { list.append(el('div', 'empty', '정지된 사람이 없어요')); return; }
+  for (const b of rows) {
+    const c = el('div', 'card row');
+    const info = el('div'); info.style.flex = '1';
+    info.append(el('div', 'who', sexAge(b.sex, b.age) + ' · ' + (b.member ? '회원' : '비회원')),
+      el('div', 'meta', until(b.banned_until) + ' · 받은 신고 ' + b.reports + '건' + (b.last_reason ? ' · 마지막 사유: ' + (REASON[b.last_reason] || b.last_reason) : '')));
+    const un = el('button', 'ok', '정지 풀기');
+    un.onclick = async () => { if (!confirm('정지를 풀까요?')) return; un.disabled = true; try { await call('admin_unban', { p_user: b.user_id }); toast('정지를 풀었어요'); await refresh(); } catch { un.disabled = false; } };
+    c.append(info, un); list.append(c);
+  }
+}
+function renderPosts(rows) {
+  const list = $('#list'); list.innerHTML = '';
+  if (!rows.length) { list.append(el('div', 'empty', '숨겨진 글이 없어요')); return; }
+  for (const p of rows) {
+    const c = el('div', 'card');
+    const top = el('div', 'row'); top.append(el('span', 'tag', p.board === 'q' ? '오늘의 질문' : '자유'), el('span', 'meta', p.display_name + ' · ' + when(p.created_at) + ' · 신고 ' + p.reports + '건'));
+    const body = el('p', null, p.body); body.style.whiteSpace = 'pre-wrap';
+    const acts = el('div', 'row');
+    const act = (label, action, cls) => { const b = el('button', cls, label); b.onclick = async () => {
+      if (action === 'delete' && !confirm('이 글을 지울까요?')) return; b.disabled = true;
+      try { await call('admin_post_action', { p_post: p.id, p_action: action }); toast(label + ' 했어요'); await refresh(); } catch { b.disabled = false; } }; return b; };
+    acts.append(act('다시 보이게', 'restore', 'ok'), act('지우기', 'delete', 'danger'));
+    c.append(top, body, acts); list.append(c);
+  }
+}
+start().catch(e => { $('#gate').textContent = '서버에 연결할 수 없어요. 잠시 후 다시 열어 주세요.'; console.warn(e); });
+window.__admin = { sb };
+</script>
+</body>
+</html>
