@@ -546,6 +546,7 @@ body,.app,#v-chat{background:var(--page)}
         <p style="margin:10px 0 0;font-size:13px;color:#7A8499;text-align:center"><a href="terms.html" target="_blank" style="color:inherit">이용약관</a> · <a href="privacy.html" target="_blank" style="color:inherit">개인정보 처리방침</a> 전문 보기</p>
         <button class="cta" id="verifyBtn" disabled>시작하기</button>
         <small class="gate-foot">나이를 속이면 이용이 정지될 수 있어요 · 앱에서는 휴대폰 인증으로 확인해요</small>
+        <div style="display:flex;gap:10px;align-items:center;margin:16px 0 0;padding:10px 12px;border:1px solid #F2C4C4;border-radius:12px;background:#FFF6F6;font-size:12px;line-height:1.5;color:#7A3B3B;text-align:left"><span aria-label="19세 미만 이용 불가" style="flex:none;display:grid;place-items:center;width:34px;height:34px;border:3px solid #E0312B;border-radius:50%;color:#E0312B;font-weight:800;font-size:14px;background:#fff">19</span><span>이 정보내용은 청소년유해매체물로서 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」 및 「청소년 보호법」에 따라 19세 미만의 청소년이 이용할 수 없습니다.</span></div>
       </div>
       <div class="gate-main blocked" id="gateBlocked" hidden>
         <div class="blocked-ic"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg></div>
@@ -653,9 +654,11 @@ body,.app,#v-chat{background:var(--page)}
         <li><button class="row-btn" id="sTheme"><span class="row-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></span><span>화면 모드</span><em id="sThemeState">기기 설정</em></button></li>
       </ul>
       <ul class="rules" style="margin-top:20px">
-        <li>사진은 지우면 바로 사라지고, 신고 확인용으로 7일 숨김 보관 후 완전히 삭제돼요</li>
-        <li>문의: 앱 출시 때 고객센터 연결 예정</li>
+        <li>지운 메시지는 상대 화면에서도 사라지지만, 신고·수사 협조를 위해 서버에 6개월 보관돼요 (사진·동영상 파일은 7일)</li>
+        <li>대화 기록은 대화가 끝나고 6개월 뒤 자동으로 지워져요</li>
+        <li>문의: <a href="mailto:yjs990@gmail.com" style="color:inherit">yjs990@gmail.com</a> · <a href="terms.html" target="_blank" style="color:inherit">이용약관</a> · <a href="privacy.html" target="_blank" style="color:inherit">개인정보 처리방침</a></li>
       </ul>
+      <div style="display:flex;gap:10px;align-items:center;margin:16px 0 0;padding:10px 12px;border:1px solid #F2C4C4;border-radius:12px;background:#FFF6F6;font-size:12px;line-height:1.5;color:#7A3B3B;text-align:left"><span aria-label="19세 미만 이용 불가" style="flex:none;display:grid;place-items:center;width:34px;height:34px;border:3px solid #E0312B;border-radius:50%;color:#E0312B;font-weight:800;font-size:14px;background:#fff">19</span><span>이 정보내용은 청소년유해매체물로서 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」 및 「청소년 보호법」에 따라 19세 미만의 청소년이 이용할 수 없습니다.</span></div>
     </div>
   </main>
 
@@ -756,7 +759,7 @@ body,.app,#v-chat{background:var(--page)}
   <div class="grab"></div>
   <h3 id="dT">이 사진을 지울까요?</h3>
   <p>나와 상대방 화면에서 바로 사라져요.</p>
-  <div class="note"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>신고 확인용으로 서버에 7일 숨김 보관된 뒤 자동으로 완전히 삭제돼요. 그 사이 신고가 없으면 아무도 볼 수 없어요.</span></div>
+  <div class="note"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><span>신고·수사 협조를 위해 글은 서버에 6개월, 사진·동영상 파일은 7일 숨김 보관된 뒤 자동으로 완전히 삭제돼요. 신고가 없으면 아무도 볼 수 없어요.</span></div>
   <button class="cta sm danger" id="deleteConfirm">삭제하기</button>
   <button class="ghost" data-close>취소</button>
 </div></div>
