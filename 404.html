@@ -1633,32 +1633,16 @@ $('#camOffBtn').onclick = () => { if (!CALL) return; const off = $('#camOffBtn')
 addEventListener('pagehide', () => { if (CALL) finishCall('canceled', null); });
 
 // 전화 오는 화면
-let ringTone = null, sharedAC = null;
-function unlockAudio() {
-  try { sharedAC ||= new (window.AudioContext || window.webkitAudioContext)(); if (sharedAC.state === 'suspended') sharedAC.resume(); } catch {}
-}
-addEventListener('pointerdown', unlockAudio, { passive: true });
-function startRingTone() {
-  stopRingTone();
-  try { navigator.vibrate?.([400, 300, 400, 900]); } catch {}
-  try {
-    unlockAudio(); const ac = sharedAC; if (!ac) return;
-    const beep = () => { [0, 0.45].forEach(d => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 660; g.gain.value = 0.06;
-      o.connect(g).connect(ac.destination); o.start(ac.currentTime + d); o.stop(ac.currentTime + d + 0.3); }); try { navigator.vibrate?.([400, 300, 400]); } catch {} };
-    beep(); ringTone = { ac, i: setInterval(beep, 2200) };
-  } catch {}
-}
-function stopRingTone() { if (ringTone) { clearInterval(ringTone.i); ringTone = null; } try { navigator.vibrate?.(0); } catch {} }
 function showIncoming(room, cid, face) {
   S.incoming = { room, cid, face };
   $('#inKind').textContent = callWord(face); $('#inAv').textContent = room.name[0]; $('#inAv').style.background = room.color;
   $('#inName').textContent = room.name; $('#inSub').textContent = callWord(face) + '을 걸었어요 · 받는 건 무료예요';
   $('#inRule').textContent = face ? '신체 노출·음란한 행동은 영구 정지 대상이에요. 불편하면 바로 끊고 신고해 주세요.' : '음란한 말, 성매매 제안은 영구 정지 대상이에요. 불편하면 바로 끊고 신고해 주세요.';
-  $('#incomingView').hidden = false; startRingTone(); updateBadges();
+  $('#incomingView').hidden = false; updateBadges();   // 소리·진동 없이 화면만 뜸 (운영자 결정)
   if (document.hidden) notify(room.name + ' 님', callWord(face) + '을 걸었어요 · 눌러서 받기', 'call:' + room.id, () => {});
   clearTimeout(S.inT); S.inT = setTimeout(() => { if (S.incoming?.cid === cid) hideIncoming(); }, (RING_SEC + 3) * 1000);
 }
-function hideIncoming() { clearTimeout(S.inT); S.incoming = null; $('#incomingView').hidden = true; stopRingTone(); updateBadges(); }
+function hideIncoming() { clearTimeout(S.inT); S.incoming = null; $('#incomingView').hidden = true; updateBadges(); }
 $('#inDecline').onclick = () => { const inc = S.incoming; hideIncoming(); if (!inc) return;
   sendCall(inc.room, inc.cid, 'decline'); (S.ringMute ||= {})[inc.room.id] = Date.now() + 15000; };
 $('#inAccept').onclick = async () => {
