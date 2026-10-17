@@ -1441,8 +1441,12 @@ const CALL_RULES = {
   voice: ['<b>음란한 말</b>이나 성적인 대화를 하면 바로 영구 정지되고 처벌받을 수 있어요.', '성매매·조건 만남 제안, 돈 요구, 연락처·외부 앱 유도는 금지예요.', '상대 동의 없이 통화를 녹음해 퍼뜨리면 처벌받아요.', '불편하면 바로 끊고 신고해 주세요.'],
   face: ['<b>신체 노출</b>, 음란한 행동을 보여주거나 요구하면 바로 영구 정지되고 처벌받을 수 있어요.', '성매매·조건 만남 제안, 돈 요구, 연락처·외부 앱 유도는 금지예요.', '상대 동의 없이 화면을 녹화·캡처해 퍼뜨리면 처벌받아요.', '불편하면 바로 끊고 신고해 주세요.']
 };
-function askCall(face) {
+// 통화 규칙(서버 call_allowed): 랜덤 상대와는 서로 메시지를 3개 이상씩 주고받은 뒤에. 친구는 바로.
+const CALL_RULE_MSG = { NEED_MORE_CHAT: '서로 메시지를 3개 이상씩 주고받은 뒤에 통화할 수 있어요', ROOM_ENDED: '끝난 대화에서는 통화할 수 없어요' };
+async function askCall(face) {
   const c = S.rooms.get(S.cur); if (!c || c.ended) return toast('끝난 대화에서는 통화할 수 없어요');
+  const { data: rule, error } = await sb.rpc('call_allowed', { p_room: c.id, p_face: face });
+  if (!error && rule !== 'ok') return toast(CALL_RULE_MSG[rule] || '지금은 통화할 수 없어요');
   S.pendingCall = face; $('#crT').textContent = (face ? '페이스톡' : '보이스톡') + ' 전에 꼭 지켜 주세요';
   $('#callRules').innerHTML = CALL_RULES[face ? 'face' : 'voice'].map(t => '<li>' + t + '</li>').join(''); open('#callRuleSheet');
 }
@@ -1464,12 +1468,14 @@ const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.goog
 // 받으면 모든 통화를 중계 서버로만 연결 → 상대가 내 IP 주소를 알 수 없음.
 // 키가 아직 없거나 실패하면 예전처럼 바로 연결(구글 STUN).
 const iceCache = new Map();
-async function iceConfig(room) {
+async function iceConfig(room, face) {
   const hit = iceCache.get(room.id); if (hit && hit.until > Date.now()) return hit.cfg;
   let cfg = { iceServers: ICE_SERVERS };
   try {
-    const call = sb.functions.invoke('turn-credentials', { body: { room: room.id } });
+    const call = sb.functions.invoke('turn-credentials', { body: { room: room.id, face: !!face } });
     const { data, error } = await Promise.race([call, new Promise(r => setTimeout(() => r({ error: 'timeout' }), 5000))]);
+    // 통화 규칙에 막히면 통화하지 않음 (예전처럼 바로 연결로 넘어가지 않게)
+    if (error?.context?.status === 403) { const body = await error.context.json().catch(() => ({})); if (CALL_RULE_MSG[body.error]) return { blocked: body.error }; }
     if (!error && data?.iceServers?.length) {
       cfg = { iceServers: data.iceServers, iceTransportPolicy: 'relay' };
       iceCache.set(room.id, { cfg, until: Date.now() + (Number(data.ttl) || 3600) * 1000 - 10 * 60 * 1000 });
@@ -1536,7 +1542,8 @@ async function placeCall(face) {
   if (!room || room.ended) return toast('끝난 대화에서는 통화할 수 없어요');
   if (CALL) return toast('이미 통화 중이에요');
   let stream; try { stream = await getMedia(face); } catch (e) { return toast(mediaErr(e, face)); }
-  const cfg = await iceConfig(room);
+  const cfg = await iceConfig(room, face);
+  if (cfg.blocked) { stream.getTracks().forEach(t => t.stop()); return toast(CALL_RULE_MSG[cfg.blocked]); }
   if (CALL || room.ended) { stream.getTracks().forEach(t => t.stop()); return; }
   CALL = { cid: crypto.randomUUID(), room, face, role: 'caller', stream, cfg, pc: null, ice: [], started: 0 };
   showCallView('상대방을 부르는 중…');
@@ -1631,7 +1638,8 @@ $('#inAccept').onclick = async () => {
   const inc = S.incoming; hideIncoming(); if (!inc) return;
   if (CALL) { sendCall(inc.room, inc.cid, 'busy'); return; }
   let stream; try { stream = await getMedia(inc.face); } catch (e) { sendCall(inc.room, inc.cid, 'decline'); return toast(mediaErr(e, inc.face)); }
-  const cfg = await iceConfig(inc.room);
+  const cfg = await iceConfig(inc.room, inc.face);
+  if (cfg.blocked) { stream.getTracks().forEach(t => t.stop()); sendCall(inc.room, inc.cid, 'decline'); return toast(CALL_RULE_MSG[cfg.blocked]); }
   if (CALL || inc.room.ended) { stream.getTracks().forEach(t => t.stop()); return; }
   CALL = { cid: inc.cid, room: inc.room, face: inc.face, role: 'callee', stream, cfg, pc: null, ice: [], started: 0 };
   if (S.cur !== inc.room.id) openChat(inc.room);
