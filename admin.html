@@ -57,7 +57,8 @@ textarea{width:100%;min-height:54px;font:inherit;border:1px solid var(--line);bo
       <button data-t="open" aria-pressed="true">처리 전 신고</button>
       <button data-t="done" aria-pressed="false">처리한 신고</button>
       <button data-t="banned" aria-pressed="false">정지된 사람</button>
-      <button data-t="posts" aria-pressed="false">숨겨진 이야기 글</button>
+      <button data-t="posts" aria-pressed="false">숨겨진 커뮤니티 글</button>
+      <button data-t="comments" aria-pressed="false">숨겨진 댓글</button>
     </div>
     <div id="list"></div>
   </div>
@@ -70,6 +71,7 @@ const sb = createClient('https://glcchqvtmpgzanbgczxu.supabase.co', 'sb_publisha
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const REASON = { prostitution: '성매매·조건 만남', ad: '광고·외부 앱 유도', abuse: '욕설·성희롱', minor: '미성년자 의심' };
+const BOARD = { q: '오늘의 질문', worry: '고민', free: '자유' };
 const STATUS = { open: '처리 전', actioned: '정지함', dismissed: '문제 없음' };
 const when = d => { d = new Date(d); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
 const until = d => !d ? '' : new Date(d).getFullYear() > 9000 || d === 'infinity' ? '영구 정지' : when(d) + '까지 정지';
@@ -108,6 +110,7 @@ async function loadTab() {
   try {
     if (tab === 'open' || tab === 'done') return renderReports(await call('admin_reports', { p_status: tab, p_limit: 100 }));
     if (tab === 'banned') return renderBanned(await call('admin_banned'));
+    if (tab === 'comments') return renderComments(await call('admin_hidden_comments'));
     return renderPosts(await call('admin_hidden_posts'));
   } catch { list.innerHTML = ''; list.append(el('div', 'empty', '불러오지 못했어요')); }
 }
@@ -181,7 +184,7 @@ function renderPosts(rows) {
   if (!rows.length) { list.append(el('div', 'empty', '숨겨진 글이 없어요')); return; }
   for (const p of rows) {
     const c = el('div', 'card');
-    const top = el('div', 'row'); top.append(el('span', 'tag', p.board === 'q' ? '오늘의 질문' : '자유'), el('span', 'meta', p.display_name + ' · ' + when(p.created_at) + ' · 신고 ' + p.reports + '건'));
+    const top = el('div', 'row'); top.append(el('span', 'tag', BOARD[p.board] || p.board), el('span', 'meta', p.display_name + ' · ' + when(p.created_at) + ' · 신고 ' + p.reports + '건'));
     const body = el('p', null, p.body); body.style.whiteSpace = 'pre-wrap';
     const acts = el('div', 'row');
     const act = (label, action, cls) => { const b = el('button', cls, label); b.onclick = async () => {
@@ -189,6 +192,23 @@ function renderPosts(rows) {
       try { await call('admin_post_action', { p_post: p.id, p_action: action }); toast(label + ' 했어요'); await refresh(); } catch { b.disabled = false; } }; return b; };
     acts.append(act('다시 보이게', 'restore', 'ok'), act('지우기', 'delete', 'danger'));
     c.append(top, body, acts); list.append(c);
+  }
+}
+// 숨겨진 댓글: 서로 다른 3명이 신고해 숨겨진 것 (018_admin_comments.sql)
+function renderComments(rows) {
+  const list = $('#list'); list.innerHTML = '';
+  if (!rows.length) { list.append(el('div', 'empty', '숨겨진 댓글이 없어요')); return; }
+  for (const c of rows) {
+    const card = el('div', 'card');
+    const top = el('div', 'row'); top.append(el('span', 'tag', '댓글'), el('span', 'meta', c.display_name + ' · ' + when(c.created_at) + ' · 신고 ' + c.reports + '건'));
+    const orig = el('div', 'meta', '원글: ' + c.post_body);
+    const body = el('p', null, c.body); body.style.whiteSpace = 'pre-wrap';
+    const acts = el('div', 'row');
+    const act = (label, action, cls) => { const b = el('button', cls, label); b.onclick = async () => {
+      if (action === 'delete' && !confirm('이 댓글을 지울까요?')) return; b.disabled = true;
+      try { await call('admin_comment_action', { p_comment: c.id, p_action: action }); toast(label + ' 했어요'); await refresh(); } catch { b.disabled = false; } }; return b; };
+    acts.append(act('다시 보이게', 'restore', 'ok'), act('지우기', 'delete', 'danger'));
+    card.append(top, orig, body, acts); list.append(card);
   }
 }
 start().catch(e => { $('#gate').textContent = '서버에 연결할 수 없어요. 잠시 후 다시 열어 주세요.'; console.warn(e); });
