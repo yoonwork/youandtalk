@@ -1092,20 +1092,24 @@ $('#sLogin').onclick = () => {
 // 카카오·구글 로그인: 지금 쓰는 익명 계정에 연결(linkIdentity)해서 대화·방이 그대로 이어지게.
 // 그 카카오·구글이 이미 다른 회원 계정에 붙어 있으면(다른 기기에서 가입한 회원) 돌아온 뒤 그 계정으로 로그인한다.
 const SNS_KEY = 'youandtalk-sns';
-const snsOpts = provider => ({ provider, options: { redirectTo: location.origin + location.pathname } });
+// 갤럭시 앱(Capacitor) 안에서는 로그인 화면을 바깥 브라우저로 열고, 끝나면 kr.jsoperation.youandtalk://login-callback 으로 앱에 돌아옴
+const IS_APP = !!window.Capacitor?.isNativePlatform?.();
+const APP_CALLBACK = 'kr.jsoperation.youandtalk://login-callback';
+const snsOpts = provider => ({ provider, options: IS_APP ? { redirectTo: APP_CALLBACK, skipBrowserRedirect: true } : { redirectTo: location.origin + location.pathname } });
 async function snsLogin(provider, forceSignIn) {
   $('#loginSheet').hidden = true;
   storage.setItem(SNS_KEY, JSON.stringify({ p: provider, t: Date.now() }));
-  const { error } = S.uid && !forceSignIn ? await sb.auth.linkIdentity(snsOpts(provider)) : await sb.auth.signInWithOAuth(snsOpts(provider));
+  const { data, error } = S.uid && !forceSignIn ? await sb.auth.linkIdentity(snsOpts(provider)) : await sb.auth.signInWithOAuth(snsOpts(provider));
+  if (!error && IS_APP && data?.url) await window.Capacitor.Plugins.Browser.open({ url: data.url });
   if (error) { storage.removeItem(SNS_KEY); toast(/not enabled|unsupported|provider/i.test(error.message) ? (provider === 'kakao' ? '카카오' : '구글') + ' 로그인은 곧 열려요' : errMsg(error)); }
   return error;
 }
 // 로그인하고 돌아온 주소(#access_token=… 또는 #error=…)를 처리하고 주소창을 깨끗이 한다.
 // supabase-js 가 주소의 토큰을 먼저 읽어야 하므로 getSession(초기화 완료)을 기다린 뒤에 지운다.
-async function handleOAuthReturn() {
-  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+async function handleOAuthReturn(fromApp) {
+  const h = new URLSearchParams((fromApp ?? location.hash).replace(/^[#?]/, ''));
   if (!h.has('access_token') && !h.has('error') && !h.has('error_description')) return;
-  history.replaceState(null, '', location.pathname + location.search);
+  if (fromApp == null) history.replaceState(null, '', location.pathname + location.search);
   // 이 브라우저에서 15분 안에 로그인 버튼을 누른 경우만 받아들임. 아니면 남이 보낸 링크라서 무시.
   let pending = null; try { pending = JSON.parse(storage.getItem(SNS_KEY) || 'null'); } catch {}
   storage.removeItem(SNS_KEY);
@@ -1127,6 +1131,13 @@ async function handleOAuthReturn() {
   if (h.has('error')) toast(/denied|cancel/i.test(desc + h.get('error')) ? '로그인을 취소했어요' : '로그인에 실패했어요. 다시 시도해 주세요');
   else if (provider) toast('로그인됐어요');
 }
+// 앱: 바깥 브라우저에서 로그인을 마치고 돌아오면 주소에 담긴 로그인 정보를 받아 새로 시작
+if (IS_APP) window.Capacitor.Plugins.App.addListener('appUrlOpen', async ({ url }) => {
+  if (!url?.startsWith(APP_CALLBACK)) return;
+  try { await window.Capacitor.Plugins.Browser.close(); } catch {}
+  const i = url.search(/[#?]/); await handleOAuthReturn(i < 0 ? '' : url.slice(i));
+  location.reload();
+});
 $('#loginKakao').onclick = () => snsLogin('kakao');
 $('#loginGoogle').onclick = () => snsLogin('google');
 $('#loginNote').textContent = '로그인해도 지금까지의 대화는 그대로 이어져요';
