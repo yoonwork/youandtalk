@@ -1029,9 +1029,9 @@ $('#loginNote').textContent = '로그인해도 지금까지의 대화는 그대�
 // 포인트는 회원(로그인한 사람)만 — 비회원은 받지도 쓰지도 않음
 $('#ptsBtn').onclick = $('#sPoints').onclick = () => {
   if (S.anon) { $('#loginMsg').textContent = '포인트는 로그인한 회원만 받고 쓸 수 있어요. 일반 채팅은 로그인 없이도 무료예요.'; open('#loginSheet'); return; }
-  $('#shopMsg').textContent = '결제는 곧 열려요. 지금은 충전할 수 없어요.'; open('#shopSheet');
+  $('#shopMsg').textContent = '포인트 충전은 앱에서 할 수 있어요. 앱은 준비 중이에요.'; open('#shopSheet');
 };
-$$('#shopSheet [data-add]').forEach(b => b.onclick = () => toast('결제는 곧 열려요'));
+$$('#shopSheet [data-add]').forEach(b => b.onclick = () => toast('포인트 충전은 앱에서 할 수 있어요 (준비 중)'));
 async function refreshMe() { const { data } = await sb.from('profiles').select('*').maybeSingle(); if (data) { S.me = data; setPoints(data.points); updPaid(); } }
 
 // ── 접속자 수 (presence) ──────────────────────────────────
@@ -1228,7 +1228,7 @@ const MEDIA = { photo: { cost: 5, bucket: 'photos', rpc: 'send_photo', word: '�
 const VIDEO_MAX_SEC = 30, VIDEO_MAX_MB = 20, VIDEO_EXT = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
 function needPoints(n, what) {
   if ((S.me?.points || 0) >= n) return true;
-  $('#shopMsg').textContent = what + '에 ' + n + 'P가 필요해요.'; open('#shopSheet'); return false;
+  $('#shopMsg').textContent = what + '에 ' + n + 'P가 필요해요. 충전은 앱에서 할 수 있어요(준비 중).'; open('#shopSheet'); return false;
 }
 function pickPhoto() { if (!needLogin('사진·동영상 보내기') || !needPoints(MEDIA.photo.cost, '사진 보내기')) return; $('#photoInput').click(); }
 $('#plusBtn').onclick = pickPhoto; $('#camBtn').onclick = pickPhoto;
