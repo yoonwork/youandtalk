@@ -1,2 +1,4 @@
 User-agent: *
-Disallow: /
+Allow: /
+Disallow: /youandtalk/admin.html
+Sitemap: https://yoonwork.github.io/youandtalk/sitemap.xml
