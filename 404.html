@@ -935,7 +935,7 @@ function show(view) {
 }
 function goTab(t) {
   S.tab = t; $$('.tab').forEach(b => b.dataset.tab === t ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'));
-  show(tabViews[t]); if (t === 'list') renderList(); if (t === 'board') renderBoard(); if (t === 'settings') loadBlocks();
+  show(tabViews[t]); if (t === 'match' && innerWidth >= 1200) renderSide(); if (t === 'list') renderList(); if (t === 'board') renderBoard(); if (t === 'settings') loadBlocks();
 }
 $$('.tab').forEach(b => b.onclick = () => goTab(b.dataset.tab));
 $$('.scrim').forEach(s => s.addEventListener('click', e => { if (e.target === s || e.target.hasAttribute('data-close')) s.hidden = true; }));
@@ -1039,8 +1039,8 @@ function updPaid() {}   // (예전 '이성만' 버튼 문구) 이제 누구나·
 function setLoginUI() {
   const on = !S.anon;
   $('#loginCardBtn').textContent = on ? '로그인됨' : '로그인'; $('#loginCardBtn').classList.toggle('on', on);
-  $('#loginText').innerHTML = on ? '<b>로그인됨</b>이야기 게시판을 쓸 수 있어요. 사진·친구 추가는 앱에서 포인트로 할 수 있어요'
-    : '<b>로그인 없이 바로 대화할 수 있어요</b>로그인하면 이야기 게시판을 쓸 수 있어요';
+  $('#loginText').innerHTML = on ? '<b>로그인됨</b>커뮤니티를 쓸 수 있어요. 사진·친구 추가는 앱에서 포인트로 할 수 있어요'
+    : '<b>로그인 없이 바로 대화할 수 있어요</b>로그인하면 커뮤니티를 쓸 수 있어요';
   $$('#wantSeg small.pt').forEach(x => x.hidden = !on);                                        // 남자·여자 "10P" 는 회원에게만
   const fe = $('#mFriend em'); if (fe) fe.hidden = !on;                                        // "20P"
   $('#camBtn').setAttribute('aria-label', on ? '사진 보내기 (5P)' : '사진 보내기');
@@ -1305,7 +1305,7 @@ $('#newMatchBtn').onclick = () => goTab('match');
 async function openChat(room) {
   S.cur = room.id;
   $('#cAv').textContent = room.name[0]; $('#cAv').style.background = room.color; $('#cName').textContent = room.name;
-  show('#v-chat'); S.forceBottom = true;
+  show('#v-chat'); S.forceBottom = true; if (innerWidth >= 1100) renderList();
   if (!room.msgs) {
     room.msgs = [];
     const { data } = await sb.from('messages').select('*').eq('room_id', room.id).order('id', { ascending: false }).limit(300);
@@ -1825,6 +1825,7 @@ function renderList() {
       badge.setAttribute('aria-label', '안 읽은 메시지 ' + c.unread + '개'); li.querySelector('.side').appendChild(badge);
     }
     li.querySelector('button').onclick = () => openChat(c);
+    if (c.id === S.cur) li.querySelector('.item').classList.add('current');
     ul.appendChild(li);
   });
 }
@@ -1992,10 +1993,50 @@ $('#writeConfirm').onclick = async () => {
 
 // ── 시작 ─────────────────────────────────────────────────
 async function afterLogin() {
-  await refreshMe(); setLoginUI(); listenMine(); joinLobby();
+  await refreshMe(); setLoginUI(); listenMine(); joinLobby(); renderSide();
   try { await sb.realtime.setAuth(); } catch {}         // 비공개 방 채널(입력 중·통화 신호)에 내 로그인 정보를 씀
   await loadRooms();
   goTab('match');
+}
+// ── PC 화면 (넓은 화면) ───────────────────────────────────
+// 홈 오른쪽 칸: 커뮤니티 새 글 3개 + 내 친구. 대화방은 왼쪽에 대화 목록이 같이 보임 (CSS 는 아래 pc-layout)
+{
+  const side = document.createElement('aside'); side.id = 'sidePanel'; side.setAttribute('aria-label', '커뮤니티와 친구');
+  side.innerHTML = '<section class="sp-card"><div class="sp-h"><b>커뮤니티</b><button class="sp-more" data-go="board">더 보기</button></div><ul class="sp-posts" id="spPosts"></ul></section>'
+    + '<section class="sp-card"><div class="sp-h"><b>내 친구</b><button class="sp-more" data-go="list">대화 목록</button></div><p class="sp-sub" id="spFriends"></p></section>';
+  $('.app').appendChild(side);
+  side.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) goTab(b.dataset.go); });
+  const st = document.createElement('style'); st.id = 'pc-layout';
+  st.textContent = '#sidePanel{display:none}'
+    + '@media (min-width:1200px){'
+    + '.app:has(#v-match:not([hidden])) #sidePanel{display:flex;flex-direction:column;gap:14px;order:3;flex:0 0 300px;padding:28px 24px 28px 0;position:sticky;top:0;align-self:flex-start;max-height:100vh;overflow:auto}'
+    + '.sp-card{background:var(--card);border-radius:22px;padding:16px;box-shadow:var(--lift)}'
+    + '.sp-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.sp-h b{font-size:15px}'
+    + '.sp-more{font-size:12.5px;color:var(--muted)}.sp-sub{margin:0;font-size:13px;color:var(--muted)}'
+    + '.sp-posts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}'
+    + '.sp-posts li{background:var(--page);border-radius:14px;padding:10px 12px;cursor:pointer}'
+    + '.sp-posts small{display:block;font-size:11.5px;color:var(--muted);margin-bottom:2px}'
+    + '.sp-posts p{margin:0;font-size:13.5px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}'
+    + '}'
+    + '@media (min-width:1100px){'
+    + '.app:has(#v-chat:not([hidden])) #v-list{display:block!important;order:2;flex:0 0 340px;max-width:340px;margin:0;padding-inline:16px;border-right:1px solid var(--line);height:100vh;overflow:auto;position:sticky;top:0}'
+    + '.app:has(#v-chat:not([hidden])) #v-chat{order:3}'
+    + '.app:has(#v-chat:not([hidden])) #backBtn{visibility:hidden}'
+    + '.item.current{background:var(--soft);border-radius:16px}'
+    + '}';
+  document.head.appendChild(st);
+}
+async function renderSide() {
+  const ul = $('#spPosts'); if (!ul) return;
+  const friends = [...S.rooms.values()].filter(r => r.friend).length;
+  $('#spFriends').textContent = S.anon ? '로그인하면 마음에 드는 상대를 친구로 남길 수 있어요' : friends ? friends + '명 · 언제든 다시 대화할 수 있어요' : '아직 친구가 없어요. 대화하다가 친구 추가를 눌러 보세요';
+  if (S.anon) { ul.innerHTML = '<li class="sp-login"><p>로그인하면 오늘의 질문 답글과 고민 이야기를 볼 수 있어요</p></li>'; ul.firstChild.onclick = () => open('#loginSheet'); return; }
+  const { data } = await sb.rpc('list_posts', { p_board: 'all', p_limit: 3 });
+  ul.innerHTML = '';
+  if (!data?.length) { ul.innerHTML = '<li><p>첫 이야기를 남겨 보세요</p></li>'; ul.firstChild.onclick = () => goTab('board'); return; }
+  data.forEach(p => { const li = document.createElement('li'); li.innerHTML = '<small></small><p></p>';
+    li.querySelector('small').textContent = BOARD_NAMES[p.board] + ' · ' + ago(p.created_at) + (p.comments_count ? ' · 댓글 ' + p.comments_count : '');
+    li.querySelector('p').textContent = p.body; li.onclick = () => goTab('board'); ul.appendChild(li); });
 }
 // 분위기 고르기: 같은 분위기를 고른 사람과 먼저 연결 (없으면 아무나). 기기에 기억해 둠
 {
