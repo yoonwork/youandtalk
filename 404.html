@@ -544,7 +544,7 @@ body,.app,#v-chat{background:var(--page)}
         </section>
 
         <p style="margin:10px 0 0;font-size:13px;color:#7A8499;text-align:center"><a href="terms.html" target="_blank" style="color:inherit">이용약관</a> · <a href="privacy.html" target="_blank" style="color:inherit">개인정보 처리방침</a> 전문 보기</p>
-        <button class="cta" id="verifyBtn" disabled>시작하기</button>
+        <button class="cta" id="verifyBtn" disabled>다음</button>
         <small class="gate-foot">나이를 속이면 이용이 정지될 수 있어요 · 앱에서는 휴대폰 인증으로 확인해요</small>
         <div style="display:flex;gap:10px;align-items:center;margin:16px 0 0;padding:10px 12px;border:1px solid #F2C4C4;border-radius:12px;background:#FFF6F6;font-size:12px;line-height:1.5;color:#7A3B3B;text-align:left"><span aria-label="19세 미만 이용 불가" style="flex:none;display:grid;place-items:center;width:34px;height:34px;border:3px solid #E0312B;border-radius:50%;color:#E0312B;font-weight:800;font-size:14px;background:#fff">19</span><span>이 정보내용은 청소년유해매체물로서 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」 및 「청소년 보호법」에 따라 19세 미만의 청소년이 이용할 수 없습니다.</span></div>
       </div>
@@ -947,11 +947,36 @@ function guessCountry() {
   if (m) return m[1];
   return /Seoul/.test(Intl.DateTimeFormat().resolvedOptions().timeZone || '') ? 'kr' : 'kr';
 }
-$('#verifyBtn').onclick = async () => {
+// 대화 전 경고 화면: 첫 화면 [다음] → 금지 행위 안내를 읽고 체크 → [대화 시작하기]에서 계정을 만든다
+{
+  const w = document.createElement('div'); w.className = 'gate-main'; w.id = 'gateWarn'; w.hidden = true;
+  const li = t => '<li style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:var(--card,#fff);border-radius:14px;font-size:14px;line-height:1.55"><span aria-hidden="true" style="flex:none;color:#E0312B;font-weight:800">!</span><span>' + t + '</span></li>';
+  w.innerHTML = '<div class="gate-head"><h1>대화 전에<br>꼭 읽어 주세요</h1><p>처음 보는 사람과 대화하는 곳이라, 모두의 안전을 위해 아래를 지켜 주세요.</p></div>'
+    + '<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px">'
+    + li('<b>만 19세 미만은 이용할 수 없어요.</b> 나이를 속이면 영구 정지돼요.')
+    + li('<b>성매매·조건만남 제안과 알선은 불법</b>이고 형사처벌을 받아요. 바로 영구 정지돼요.')
+    + li('음란한 말·사진·영상, 통화 중 신체 노출은 금지예요.')
+    + li('상대 동의 없이 녹음·녹화·캡처해서 퍼뜨리면 처벌받을 수 있어요.')
+    + li('돈·계좌·개인정보를 요구하거나 다른 메신저로 옮기자고 하면 사기일 수 있어요. 바로 신고해 주세요.')
+    + li('신고된 대화는 운영자가 확인하고, 필요하면 수사기관에 협조해요.')
+    + '</ul>'
+    + '<button class="allagree" id="warnOk" aria-pressed="false"><span class="ck"></span>위 내용을 확인했어요</button>'
+    + '<button class="cta" id="warnGo" disabled>대화 시작하기</button>'
+    + '<button class="ghost" id="warnBack" style="align-self:center;width:auto;padding:0 24px">이전으로</button>';
+  $('#gateMain').after(w);
+  $('#warnOk').onclick = () => { const v = $('#warnOk').getAttribute('aria-pressed') !== 'true'; $('#warnOk').setAttribute('aria-pressed', v); $('#warnGo').disabled = !v; };
+  $('#warnBack').onclick = () => { w.hidden = true; $('#gateMain').hidden = false; };
+  $('#warnGo').onclick = () => enterChat();
+}
+$('#verifyBtn').onclick = () => {
   const y = Number($('#birth').value), now = new Date().getFullYear();
   if (y < 1900 || y > now) { toast('출생연도를 다시 확인해 주세요'); return; }
   if (now - y < 19) { $('#gateMain').hidden = true; $('#gateBlocked').hidden = false; return; }
-  const btn = $('#verifyBtn'); btn.disabled = true; btn.textContent = '잠시만요…';
+  $('#gateMain').hidden = true; $('#gateWarn').hidden = false; $('#v-gate').scrollTop = 0; window.scrollTo(0, 0);
+};
+async function enterChat() {
+  const y = Number($('#birth').value);
+  const btn = $('#warnGo'); btn.disabled = true; btn.textContent = '잠시만요…';
   try {
     if (!S.uid) {
       const { data, error } = await sb.auth.signInAnonymously(); if (error) throw error;
@@ -959,12 +984,12 @@ $('#verifyBtn').onclick = async () => {
     }
     const { data, error } = await sb.rpc('save_profile', { p_sex: S.mySex === '남' ? 'm' : 'f', p_birth_year: y, p_country: guessCountry(), p_lang: 'ko' });
     if (error) throw error;
-    S.me = data; await afterLogin();
+    S.me = data; $('#gateWarn').hidden = true; $('#gateMain').hidden = false; await afterLogin();
   } catch (e) {
-    if ((e.message || '').includes('UNDERAGE')) { $('#gateMain').hidden = true; $('#gateBlocked').hidden = false; }
-    else { toast(errMsg(e)); const f = $('.gate-foot'); f.textContent = /fetch|network|Failed/i.test(e.message || '') ? '서버에 연결할 수 없어요. 인터넷 연결을 확인하고 다시 눌러 주세요.' : errMsg(e); f.classList.add('werr'); }
-  } finally { btn.textContent = '시작하기'; syncAgree(); }
-};
+    if ((e.message || '').includes('UNDERAGE')) { $('#gateWarn').hidden = true; $('#gateBlocked').hidden = false; }
+    else toast(/fetch|network|Failed/i.test(e.message || '') ? '서버에 연결할 수 없어요. 인터넷 연결을 확인하고 다시 눌러 주세요.' : errMsg(e));
+  } finally { btn.textContent = '대화 시작하기'; btn.disabled = $('#warnOk').getAttribute('aria-pressed') !== 'true'; }
+}
 
 // ── 로그인 상태·포인트 ─────────────────────────────────────
 function setPoints(n) { $$('.pts-n').forEach(e => e.textContent = fmt(n)); }
@@ -1870,12 +1895,16 @@ function handleBack() {
   if (!$('#incomingView').hidden || !$('#callView').hidden) return true;
   if (!$('#v-chat').hidden) { $('#backBtn').click(); return true; }
   if (!$('#v-matching').hidden) { cancelMatch(); return true; }
+  if (!$('#v-gate').hidden && !$('#gateWarn').hidden) { $('#warnBack').click(); return true; }
   if (!$('#v-gate').hidden) return false;
   if (S.tab && S.tab !== 'match') { goTab('match'); return true; }
   return false;
 }
-try { history.pushState({ yt: 1 }, ''); } catch {}
-addEventListener('popstate', () => { if (handleBack()) { try { history.pushState({ yt: 1 }, ''); } catch {} } else history.back(); });
+// 크롬은 손으로 누르지 않고 만든 기록을 뒤로 가기에서 건너뛰므로, 화면을 누를 때마다 '뒤로 가기 막이'가 없으면 하나 만들어 둔다
+const guardBack = () => { try { if (!history.state?.yt) history.pushState({ yt: 1 }, ''); } catch {} };
+addEventListener('pointerdown', guardBack, { capture: true, passive: true });
+addEventListener('keydown', guardBack, { capture: true });
+addEventListener('popstate', () => { if (handleBack()) guardBack(); else history.back(); });
 // 다른 탭에서 로그아웃했거나 세션이 끊기면 새로 시작
 sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT' && S.uid && !S.resetting) setTimeout(() => location.reload(), 0); });
 // 카카오톡 안의 브라우저는 구글 로그인·통화가 막힐 수 있음 → 다른 브라우저로 열기 안내
