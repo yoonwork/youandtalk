@@ -1,0 +1,14 @@
+{
+  "name": "유앤톡",
+  "short_name": "유앤톡",
+  "description": "버튼 하나로 처음 보는 사람과 대화하는 1:1 랜덤채팅",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F1F3F7",
+  "theme_color": "#2F7BFF",
+  "icons": [
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
