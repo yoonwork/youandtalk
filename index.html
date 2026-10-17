@@ -1007,6 +1007,12 @@ $('#verifyBtn').onclick = () => {
   if (now - y < 19) { $('#gateMain').hidden = true; $('#gateBlocked').hidden = false; return; }
   $('#gateMain').hidden = true; $('#gateWarn').hidden = false; $('#v-gate').scrollTop = 0; window.scrollTo(0, 0);
 };
+// 기기 표시: 이 브라우저에 저장한 임의 값. 정지된 사람이 새 비회원으로 다시 들어오는 것을 막는 데 씀 (017_ban_evasion.sql)
+function deviceId() {
+  let d = storage.getItem('youandtalk-device');
+  if (!d || !/^[A-Za-z0-9-]{16,64}$/.test(d)) { d = crypto.randomUUID(); storage.setItem('youandtalk-device', d); }
+  return d;
+}
 async function enterChat() {
   const y = Number($('#birth').value);
   const btn = $('#warnGo'); btn.disabled = true; btn.textContent = '잠시만요…';
@@ -1015,11 +1021,14 @@ async function enterChat() {
       const { data, error } = await sb.auth.signInAnonymously(); if (error) throw error;
       S.uid = data.user.id; S.anon = true;
     }
+    const mk = await sb.rpc('mark_device', { p_device: deviceId() });
+    if (mk.error && /BANNED/.test(mk.error.message || '')) throw mk.error;
     const { data, error } = await sb.rpc('save_profile', { p_sex: S.mySex === '남' ? 'm' : 'f', p_birth_year: y, p_country: guessCountry(), p_lang: 'ko' });
     if (error) throw error;
     S.me = data; $('#gateWarn').hidden = true; $('#gateMain').hidden = false; await afterLogin();
   } catch (e) {
     if ((e.message || '').includes('UNDERAGE')) { $('#gateWarn').hidden = true; $('#gateBlocked').hidden = false; }
+    else if ((e.message || '').includes('BANNED')) toast('이 기기에서는 지금 이용할 수 없어요. 이용이 정지된 기록이 있어요');
     else toast(/fetch|network|Failed/i.test(e.message || '') ? '서버에 연결할 수 없어요. 인터넷 연결을 확인하고 다시 눌러 주세요.' : errMsg(e));
   } finally { btn.textContent = '대화 시작하기'; btn.disabled = $('#warnOk').getAttribute('aria-pressed') !== 'true'; }
 }
@@ -2047,6 +2056,7 @@ if (/KAKAOTALK/i.test(navigator.userAgent)) {
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       S.uid = session.user.id; S.anon = !isMember(session.user);
+      sb.rpc('mark_device', { p_device: deviceId() }).then(() => {});   // 기기 표시를 기억해 둠 (정지되면 쓰임)
       const { data } = await sb.from('profiles').select('*').maybeSingle();
       if (data && !data.deleted_at) { S.me = data; await afterLogin(); return; }
       // 탈퇴 표시된 계정으로 다시 로그인함(신고 처리 때문에 기록이 남아 있던 계정) → 처음 입장부터 다시
