@@ -862,7 +862,7 @@ const storage = {
   setItem: (k, v) => { try { localStorage.setItem(k, v); } catch { mem[k] = v; } },
   removeItem: k => { try { localStorage.removeItem(k); } catch { delete mem[k]; } }
 };
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storage, storageKey: 'youandtalk-auth', persistSession: true } });
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storage, storageKey: 'youandtalk-auth', persistSession: true, detectSessionInUrl: false } });
 
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
@@ -875,8 +875,11 @@ const REASON = { '성매매·조건 만남 유도': 'prostitution', '광고·외
 const ERR = {
   UNDERAGE: '만 19세 미만은 이용할 수 없어요', LOGIN_REQUIRED: '로그인한 사람만 쓸 수 있어요', NOT_ENOUGH_POINTS: '포인트가 부족해요',
   BANNED: '이용이 정지된 계정이에요', ROOM_ENDED: '이미 끝난 대화예요', PARTNER_NOT_LOGGED_IN: '상대가 로그인하지 않아서 친구로 추가할 수 없어요',
-  ALREADY_FRIEND: '이미 친구예요', NOT_IN_ROOM: '대화방을 찾을 수 없어요', NO_PROFILE: '처음 정보부터 다시 입력해 주세요', BAD_INPUT: '다시 시도해 주세요'
+  ALREADY_FRIEND: '이미 친구예요', NOT_IN_ROOM: '대화방을 찾을 수 없어요', NO_PROFILE: '처음 정보부터 다시 입력해 주세요', BAD_INPUT: '다시 시도해 주세요',
+  TOO_FAST: '너무 빨리 보내고 있어요. 잠시 후 다시 보내 주세요'
 };
+// 회원 = 카카오·구글이 실제로 연결된 계정 (서버 private.is_anon 과 같은 기준)
+const isMember = u => !!u && (u.identities || []).some(i => i.provider === 'kakao' || i.provider === 'google');
 const errMsg = e => { const m = e?.message || ''; for (const k in ERR) if (m.includes(k)) return ERR[k]; return '연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요'; };
 
 const QUESTIONS = ['요즘 가장 자주 듣는 노래는?', '오늘 하루 중 제일 좋았던 순간은?', '지금 당장 떠날 수 있다면 어디로 갈래요?', '최근에 웃겼던 일 하나만 알려 주세요',
@@ -988,7 +991,7 @@ const SNS_KEY = 'youandtalk-sns';
 const snsOpts = provider => ({ provider, options: { redirectTo: location.origin + location.pathname } });
 async function snsLogin(provider, forceSignIn) {
   $('#loginSheet').hidden = true;
-  storage.setItem(SNS_KEY, provider);
+  storage.setItem(SNS_KEY, JSON.stringify({ p: provider, t: Date.now() }));
   const { error } = S.uid && !forceSignIn ? await sb.auth.linkIdentity(snsOpts(provider)) : await sb.auth.signInWithOAuth(snsOpts(provider));
   if (error) { storage.removeItem(SNS_KEY); toast(/not enabled|unsupported|provider/i.test(error.message) ? (provider === 'kakao' ? '카카오' : '구글') + ' 로그인은 곧 열려요' : errMsg(error)); }
   return error;
@@ -998,9 +1001,16 @@ async function snsLogin(provider, forceSignIn) {
 async function handleOAuthReturn() {
   const h = new URLSearchParams(location.hash.replace(/^#/, ''));
   if (!h.has('access_token') && !h.has('error') && !h.has('error_description')) return;
-  try { await sb.auth.getSession(); } catch {}
   history.replaceState(null, '', location.pathname + location.search);
-  const provider = storage.getItem(SNS_KEY); storage.removeItem(SNS_KEY);
+  // 이 브라우저에서 15분 안에 로그인 버튼을 누른 경우만 받아들임. 아니면 남이 보낸 링크라서 무시.
+  let pending = null; try { pending = JSON.parse(storage.getItem(SNS_KEY) || 'null'); } catch {}
+  storage.removeItem(SNS_KEY);
+  const provider = pending && Date.now() - pending.t < 15 * 60 * 1000 ? pending.p : null;
+  if (h.has('access_token')) {
+    if (!provider) { console.warn('ignored login link that this browser did not start'); return; }
+    const { error } = await sb.auth.setSession({ access_token: h.get('access_token'), refresh_token: h.get('refresh_token') || '' });
+    if (error) { toast('로그인에 실패했어요. 다시 시도해 주세요'); return; }
+  }
   const desc = h.get('error_description') || '';
   if (h.get('error_code') === 'identity_already_exists' || /already linked/i.test(desc)) {
     if (provider) {
@@ -1026,7 +1036,7 @@ async function refreshMe() { const { data } = await sb.from('profiles').select('
 
 // ── 접속자 수 (presence) ──────────────────────────────────
 function joinLobby() {
-  const ch = sb.channel('lobby', { config: { presence: { key: S.uid } } });
+  const ch = sb.channel('lobby', { config: { presence: { key: crypto.randomUUID() } } });   // 내 계정 id 는 안 보냄
   ch.on('presence', { event: 'sync' }, () => { $('#liveCount').textContent = fmt(Math.max(1, Object.keys(ch.presenceState()).length)); })
     .subscribe(st => { if (st === 'SUBSCRIBED') ch.track({ at: Date.now() }); });
 }
@@ -1167,8 +1177,8 @@ function renderChat() {
     const who = m.sender_id === S.uid ? 'me' : 'you';
     const w = document.createElement('div'); w.className = 'msg ' + who;
     const b = document.createElement('div'); b.className = 'bubble';
-    if (m.deleted_at) { b.classList.add('gone'); b.textContent = m.kind === 'photo' ? '삭제된 사진이에요' : '삭제된 메시지예요'; }
-    else if (m.kind === 'photo') { b.classList.add('photo'); const im = new Image(); im.alt = '사진'; b.appendChild(im); photoUrl(m.photo_path).then(u => { im.src = u; }); }
+    if (m.deleted_at) { b.classList.add('gone'); b.textContent = m.kind === 'photo' ? '삭제된 사진이에요' : m.kind === 'video' ? '삭제된 동영상이에요' : '삭제된 메시지예요'; }
+    else if (m.kind === 'photo' || m.kind === 'video') { b.classList.add('photo'); b.appendChild(mediaEl(m)); }
     else b.textContent = m.body;
     const t = document.createElement('time'); t.textContent = clock(m.created_at);
     w.append(b, t); log.appendChild(w);
@@ -1176,6 +1186,22 @@ function renderChat() {
   });
   if (c.ended) add('sys', c.endedByMe ? '대화를 나갔어요' : '상대방이 대화를 나갔어요');
   log.scrollTop = log.scrollHeight;
+}
+// 사진·동영상 칸은 메시지마다 한 번만 만들어 다시 씀 → 새 메시지가 와도 보던 동영상이 멈추지 않음
+const mediaEls = new Map();
+function mediaEl(m) {
+  const key = m.id + ':' + m.photo_path; let el = mediaEls.get(key);
+  if (!el) {
+    if (m.kind === 'video') { el = document.createElement('video'); el.controls = true; el.playsInline = true; el.preload = 'metadata'; el.setAttribute('aria-label', '동영상'); }
+    else { el = new Image(); el.alt = '사진'; }
+    mediaUrl(m.kind, m.photo_path).then(u => { if (u) el.src = u; });
+    // 주소가 만료(10분)돼서 못 열면, 지워지지 않은 경우에 한해 새 주소를 받아 한 번 더 시도
+    let retried = 0;
+    el.addEventListener('error', () => { if (retried++ >= 2) return; signed.delete(m.photo_path);
+      mediaUrl(m.kind, m.photo_path).then(u => { if (u) { const t = el.currentTime || 0; el.src = u; if (el.tagName === 'VIDEO' && t) el.currentTime = t; } }); });
+    mediaEls.set(key, el);
+  }
+  return el;
 }
 let typingT;
 function showTyping() {
@@ -1195,8 +1221,16 @@ $('#composer').addEventListener('submit', async e => {
   if (error) { toast(errMsg(error)); $('#msgInput').value = v; return; }
   upsertMsg(c, data); renderChat();
 });
-// 사진: 한 장씩, 미리보기로 "이 사진을 보낼까요?" 확인 → 줄여서(긴 변 1280px, JPEG) 올리고 5P
-function pickPhoto() { if (!needLogin('사진 보내기')) return; if ((S.me?.points || 0) < 5) { $('#shopMsg').textContent = '사진 보내기에 5P가 필요해요.'; open('#shopSheet'); return; } $('#photoInput').click(); }
+// 사진·동영상: 한 개씩, 미리보기로 "이 사진(동영상)을 보낼까요?" 확인 후 보냄. 회원만.
+//   사진 5P: 긴 변 1280px JPEG로 줄여서 photos 버킷에
+//   동영상 10P: 30초·20MB까지, mp4/webm/mov 그대로 videos 버킷에 (서버 버킷이 20MB·형식을 한 번 더 막음)
+const MEDIA = { photo: { cost: 5, bucket: 'photos', rpc: 'send_photo', word: '사진' }, video: { cost: 10, bucket: 'videos', rpc: 'send_video', word: '동영상' } };
+const VIDEO_MAX_SEC = 30, VIDEO_MAX_MB = 20, VIDEO_EXT = { 'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov' };
+function needPoints(n, what) {
+  if ((S.me?.points || 0) >= n) return true;
+  $('#shopMsg').textContent = what + '에 ' + n + 'P가 필요해요.'; open('#shopSheet'); return false;
+}
+function pickPhoto() { if (!needLogin('사진·동영상 보내기') || !needPoints(MEDIA.photo.cost, '사진 보내기')) return; $('#photoInput').click(); }
 $('#plusBtn').onclick = pickPhoto; $('#camBtn').onclick = pickPhoto;
 async function shrink(file) {
   const img = await createImageBitmap(file); const k = Math.min(1, 1280 / Math.max(img.width, img.height));
@@ -1204,25 +1238,66 @@ async function shrink(file) {
   cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
   return new Promise(r => cv.toBlob(r, 'image/jpeg', 0.8));
 }
+function videoSeconds(url) {
+  return new Promise((res, rej) => { const v = document.createElement('video'); v.preload = 'metadata'; v.muted = true;
+    v.onloadedmetadata = () => res(v.duration); v.onerror = () => rej(new Error('bad video')); v.src = url; });
+}
+function clearPending() {
+  if (S.pending?.url) URL.revokeObjectURL(S.pending.url);
+  S.pending = null; const vp = $('#videoPreview'); vp.pause(); vp.removeAttribute('src'); vp.load();
+}
+function showMediaPreview(kind, url) {
+  const isV = kind === 'video', m = MEDIA[kind];
+  $('#photoPreview').hidden = isV; $('#videoPreview').hidden = !isV;
+  if (isV) $('#videoPreview').src = url; else $('#photoPreview').src = url;
+  $('#phT').textContent = '이 ' + m.word + '을 보낼까요?';
+  $('#photoCost').textContent = isV ? '동영상은 한 개씩, ' + VIDEO_MAX_SEC + '초까지 보낼 수 있고 ' + m.cost + 'P가 사용돼요. 휴대폰으로 찍은 동영상에는 찍은 장소 정보가 들어 있을 수 있어요. 보낸 동영상은 꾹 눌러 지울 수 있어요.'
+    : '사진은 한 장씩 보낼 수 있고, 한 장에 ' + m.cost + 'P가 사용돼요. 보낸 사진은 꾹 눌러 지울 수 있어요.';
+  $('#photoSend').disabled = false; $('#photoSend').textContent = '보내기';
+  open('#photoSheet');
+}
 $('#photoInput').addEventListener('change', async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-  if (!f.type.startsWith('image/')) return toast('사진 파일만 보낼 수 있어요');
-  try { S.pendingPhoto = await shrink(f); } catch { return toast('이 사진은 열 수 없어요'); }
-  $('#photoPreview').src = URL.createObjectURL(S.pendingPhoto); open('#photoSheet');
+  clearPending();
+  if (f.type.startsWith('video/')) {
+    if (!VIDEO_EXT[f.type]) return toast('mp4, mov, webm 동영상만 보낼 수 있어요');
+    if (f.size > VIDEO_MAX_MB * 1024 * 1024) return toast('동영상은 ' + VIDEO_MAX_MB + 'MB까지 보낼 수 있어요');
+    if (!needPoints(MEDIA.video.cost, '동영상 보내기')) return;
+    const url = URL.createObjectURL(f);
+    let sec; try { sec = await videoSeconds(url); } catch { URL.revokeObjectURL(url); return toast('이 동영상은 열 수 없어요'); }
+    if (!(sec <= VIDEO_MAX_SEC + 0.5)) { URL.revokeObjectURL(url); return toast('동영상은 ' + VIDEO_MAX_SEC + '초까지 보낼 수 있어요'); }
+    S.pending = { kind: 'video', blob: f, type: f.type, ext: VIDEO_EXT[f.type], url };
+    return showMediaPreview('video', url);
+  }
+  if (!f.type.startsWith('image/')) return toast('사진이나 동영상만 보낼 수 있어요');
+  let blob; try { blob = await shrink(f); } catch { return toast('이 사진은 열 수 없어요'); }
+  if (!blob) return toast('이 사진은 열 수 없어요');
+  const url = URL.createObjectURL(blob);
+  S.pending = { kind: 'photo', blob, type: 'image/jpeg', ext: 'jpg', url };
+  showMediaPreview('photo', url);
 });
+$$('#photoSheet [data-close]').forEach(b => b.addEventListener('click', clearPending));
 $('#photoSend').onclick = async () => {
-  const blob = S.pendingPhoto, c = S.rooms.get(S.cur); S.pendingPhoto = null; $('#photoSheet').hidden = true; if (!blob || !c) return;
-  const path = c.id + '/' + S.uid + '/' + Date.now() + '.jpg';
-  const up = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
-  if (up.error) return toast(errMsg(up.error));
-  const { error } = await sb.rpc('send_photo', { p_room: c.id, p_path: path });
-  if (error) return toast(errMsg(error));
+  const p = S.pending, c = S.rooms.get(S.cur), btn = $('#photoSend'); if (!p || !c) return;
+  if (c.ended) { clearPending(); $('#photoSheet').hidden = true; return toast('끝난 대화에는 보낼 수 없어요'); }
+  const m = MEDIA[p.kind]; btn.disabled = true; btn.textContent = '보내는 중…';
+  const path = c.id + '/' + S.uid + '/' + Date.now() + '.' + p.ext;
+  const up = await sb.storage.from(m.bucket).upload(path, p.blob, { contentType: p.type });
+  if (up.error) { btn.disabled = false; btn.textContent = '보내기';
+    return toast(/size|large|413/i.test(up.error.message || '') ? m.word + ' 크기가 너무 커요' : errMsg(up.error)); }
+  const { data: id, error } = await sb.rpc(m.rpc, { p_room: c.id, p_path: path });
+  if (error) { btn.disabled = false; btn.textContent = '보내기'; return toast(errMsg(error)); }
+  clearPending(); $('#photoSheet').hidden = true;
+  if (id && c.msgs && !c.msgs.some(x => x.id === id)) { upsertMsg(c, { id, room_id: c.id, sender_id: S.uid, kind: p.kind, photo_path: path, created_at: new Date().toISOString() }); renderChat(); }
   refreshMe();
 };
+// 비공개 파일 주소: 10분짜리 서명 주소를 받아 9분 동안만 다시 씀 (지운 사진·동영상이 오래 열려 있지 않게)
 const signed = new Map();
-async function photoUrl(path) {
-  if (!signed.has(path)) { const { data } = await sb.storage.from('photos').createSignedUrl(path, 3600); signed.set(path, data?.signedUrl || ''); }
-  return signed.get(path);
+async function mediaUrl(kind, path) {
+  const hit = signed.get(path); if (hit && hit.until > Date.now()) return hit.url;
+  const { data } = await sb.storage.from(MEDIA[kind].bucket).createSignedUrl(path, 600);
+  signed.set(path, { url: data?.signedUrl || '', until: Date.now() + 540000 });
+  return data?.signedUrl || '';
 }
 
 // 꾹 눌러 삭제
@@ -1232,7 +1307,7 @@ function attachDelete(w, m) {
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => w.addEventListener(ev, cancel));
   w.addEventListener('contextmenu', e => { e.preventDefault(); cancel(); ask(m); });
 }
-function ask(m) { S.delTarget = m; $('#dT').textContent = m.kind === 'photo' ? '이 사진을 지울까요?' : '이 메시지를 지울까요?'; open('#deleteSheet'); }
+function ask(m) { S.delTarget = m; $('#dT').textContent = m.kind === 'photo' ? '이 사진을 지울까요?' : m.kind === 'video' ? '이 동영상을 지울까요?' : '이 메시지를 지울까요?'; open('#deleteSheet'); }
 $('#deleteConfirm').onclick = async () => {
   $('#deleteSheet').hidden = true; const m = S.delTarget; S.delTarget = null; if (!m) return;
   const { error } = await sb.rpc('delete_message', { p_id: m.id });
@@ -1435,7 +1510,8 @@ function showIncoming(room, cid, face) {
   clearTimeout(S.inT); S.inT = setTimeout(() => { if (S.incoming?.cid === cid) hideIncoming(); }, (RING_SEC + 3) * 1000);
 }
 function hideIncoming() { clearTimeout(S.inT); S.incoming = null; $('#incomingView').hidden = true; stopRingTone(); }
-$('#inDecline').onclick = () => { const inc = S.incoming; hideIncoming(); if (inc) sendCall(inc.room, inc.cid, 'decline'); };
+$('#inDecline').onclick = () => { const inc = S.incoming; hideIncoming(); if (!inc) return;
+  sendCall(inc.room, inc.cid, 'decline'); (S.ringMute ||= {})[inc.room.id] = Date.now() + 15000; };
 $('#inAccept').onclick = async () => {
   const inc = S.incoming; hideIncoming(); if (!inc) return;
   if (CALL) { sendCall(inc.room, inc.cid, 'busy'); return; }
@@ -1455,6 +1531,7 @@ async function onCallSignal(room, p) {
       case 'ring':
         if (mine || S.incoming?.cid === p.cid) return;                      // 같은 부르기를 다시 받은 것
         if (CALL || S.incoming || room.ended) { sendCall(room, p.cid, 'busy'); return; }
+        if ((S.ringMute?.[room.id] || 0) > Date.now()) { sendCall(room, p.cid, 'decline'); return; }
         showIncoming(room, p.cid, !!p.face); return;
       case 'cancel':
         if (S.incoming?.cid === p.cid) { const f = S.incoming.face; hideIncoming(); toast('상대방이 ' + callWord(f) + '을 취소했어요'); } return;
@@ -1508,7 +1585,7 @@ function renderList() {
     const av = li.querySelector('.av'); av.textContent = c.name[0]; av.style.background = c.color;
     const b = li.querySelector('b'); b.textContent = c.name; const t = document.createElement('span'); t.className = c.friend ? 'tag' : 'tag live'; t.textContent = c.friend ? '친구' : '랜덤 대화 중'; b.appendChild(t);
     const last = c.msgs?.filter(m => m.kind !== 'system').slice(-1)[0];
-    li.querySelector('.last').textContent = c.ended ? '대화가 끝났어요' : last ? (last.deleted_at ? '삭제된 메시지' : last.kind === 'photo' ? '사진' : last.body) : (c.sex === 'm' ? '남자' : '여자') + ' · ' + c.age + '세 · ' + c.region;
+    li.querySelector('.last').textContent = c.ended ? '대화가 끝났어요' : last ? (last.deleted_at ? '삭제된 메시지' : last.kind === 'photo' ? '사진' : last.kind === 'video' ? '동영상' : last.body) : (c.sex === 'm' ? '남자' : '여자') + ' · ' + c.age + '세 · ' + c.region;
     li.querySelector('.side span').textContent = clock(c.createdAt);
     li.querySelector('button').onclick = () => openChat(c);
     ul.appendChild(li);
@@ -1546,17 +1623,14 @@ async function renderBoard() {
     ul.appendChild(li); return; }
   const seq = ++boardSeq;
   ul.insertAdjacentHTML('beforeend', '<li class="empty">불러오는 중…</li>');
-  const [{ data: posts, error }, { data: likes }] = await Promise.all([
-    sb.from('posts').select('id, author_id, board, body, display_name, likes_count, created_at').eq('board', S.board).order('id', { ascending: false }).limit(50),
-    sb.from('post_likes').select('post_id')]);
+  const { data: posts, error } = await sb.rpc('list_posts', { p_board: S.board, p_limit: 50 });
   if (seq !== boardSeq) return;                     // 그새 다른 게시판을 열었으면 이 결과는 버림
   ul.innerHTML = '';
   if (error) { ul.insertAdjacentHTML('beforeend', '<li class="empty">' + errMsg(error) + '</li>'); return; }
   if (!posts?.length) { ul.insertAdjacentHTML('beforeend', '<li class="empty">첫 이야기를 남겨 보세요</li>'); return; }
-  const liked = new Set((likes || []).map(x => x.post_id));
   posts.forEach(p => {
-    const mine = p.author_id === S.uid, li = document.createElement('li'); li.className = 'post';
-    li.innerHTML = '<div class="post-h"><span class="av"></span><b></b><span>' + ago(p.created_at) + '</span><button class="more" aria-label="' + (mine ? '내 글 지우기' : '신고하기') + '"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div><p></p><div class="post-a"><button class="like" aria-pressed="' + liked.has(p.id) + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>공감 <span>' + p.likes_count + '</span></button></div>';
+    const mine = !!p.mine, li = document.createElement('li'); li.className = 'post';
+    li.innerHTML = '<div class="post-h"><span class="av"></span><b></b><span>' + ago(p.created_at) + '</span><button class="more" aria-label="' + (mine ? '내 글 지우기' : '신고하기') + '"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div><p></p><div class="post-a"><button class="like" aria-pressed="' + !!p.liked + '"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>공감 <span>' + p.likes_count + '</span></button></div>';
     const av = li.querySelector('.av'); av.textContent = p.display_name[0]; av.style.background = nameColor(p.display_name);
     li.querySelector('b').textContent = mine ? p.display_name + ' (나)' : p.display_name; li.querySelector('p').textContent = p.body;
     const likeBtn = li.querySelector('.like');
@@ -1613,7 +1687,7 @@ $('#qdayDate').textContent = (new Date().getMonth() + 1) + '월 ' + new Date().g
     await handleOAuthReturn();
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
-      S.uid = session.user.id; S.anon = !!session.user.is_anonymous;
+      S.uid = session.user.id; S.anon = !isMember(session.user);
       const { data } = await sb.from('profiles').select('*').maybeSingle();
       if (data) { S.me = data; await afterLogin(); return; }
       // 세션은 남았는데 프로필이 없음 = 지워진 계정(테스트 정리, 운영 삭제 등). 버리고 처음부터
