@@ -1041,7 +1041,7 @@ function toRoom(r) {
 async function loadRooms() {
   const { data, error } = await sb.from('rooms').select('*').order('created_at', { ascending: false }).limit(50);
   if (error) return;
-  data.forEach(r => S.rooms.set(r.id, toRoom(r)));
+  data.forEach(r => { const room = toRoom(r); S.rooms.set(r.id, room); roomCh(room); });
   renderList();
 }
 async function fetchRoom(id) {
@@ -1054,9 +1054,14 @@ async function fetchRoom(id) {
 function listenMine() {
   sb.channel('mine')
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'match_queue' }, p => { if (p.new.room_id) onMatched(p.new.room_id); })
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'rooms' }, p => { S.rooms.set(p.new.id, toRoom(p.new)); if (p.new.user_a === S.uid) onMatched(p.new.id); renderList(); })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'rooms' }, p => { const room = toRoom(p.new); S.rooms.set(room.id, room); roomCh(room); if (p.new.user_a === S.uid) onMatched(p.new.id); renderList(); })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms' }, p => {
       const room = toRoom(p.new); S.rooms.set(room.id, room);
+      if (room.ended) {                                   // 대화가 끝나면 통화도 끊고 채널도 닫음
+        if (CALL?.room.id === room.id) finishCall('ended', '상대방이 대화를 나가서 통화가 끝났어요', false);
+        if (S.incoming?.room.id === room.id) hideIncoming();
+        dropRoomCh(room);
+      }
       if (S.cur === room.id) renderChat(); renderList();
     })
     .subscribe();
@@ -1115,12 +1120,22 @@ async function openChat(room) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: 'room_id=eq.' + room.id }, p => {
         if (p.new?.id) { upsertMsg(room, p.new); if (p.new.sender_id !== S.uid) hideTyping(); if (S.cur === room.id) renderChat(); }
       }).subscribe();
-    await sb.realtime.setAuth();
-    room.typingCh = sb.channel('room:' + room.id, { config: { private: true, broadcast: { self: false } } })
-      .on('broadcast', { event: 'typing' }, () => { if (S.cur === room.id) showTyping(); }).subscribe();
   }
+  roomCh(room);
   renderChat();
 }
+// 방마다 비공개 채널 'room:{id}' 하나: "입력 중…" 표시와 통화 신호를 주고받는다. (그 방 두 사람만, 진행 중일 때만)
+// 다른 화면에 있어도 전화가 오도록, 끝나지 않은 방은 앱을 켤 때부터 연결해 둔다.
+async function roomCh(room) {
+  if (room.typingCh || room.ended) return room.typingCh;
+  room.typingCh = sb.channel('room:' + room.id, { config: { private: true, broadcast: { self: false } } });
+  room.typingCh
+    .on('broadcast', { event: 'typing' }, () => { if (S.cur === room.id) showTyping(); })
+    .on('broadcast', { event: 'call' }, ({ payload }) => onCallSignal(room, payload || {}))
+    .subscribe();
+  return room.typingCh;
+}
+function dropRoomCh(room) { if (room.typingCh) { sb.removeChannel(room.typingCh); room.typingCh = null; } }
 function upsertMsg(room, m) {
   const i = room.msgs.findIndex(x => x.id === m.id);
   if (i >= 0) room.msgs[i] = m; else { room.msgs.push(m); room.msgs.sort((a, b) => a.id - b.id); }
@@ -1146,7 +1161,7 @@ function renderChat() {
   const q = document.createElement('div'); q.className = 'qcard'; q.innerHTML = '<span>오늘의 질문</span><b></b><small>서로 답하면서 시작해 보세요</small>';
   q.querySelector('b').textContent = todayQ(); log.appendChild(q);
   (c.msgs || []).forEach(m => {
-    if (m.kind === 'system') { add('sys', m.body === 'friend_added' ? '친구가 됐어요. 친구 목록에서 언제든 다시 대화할 수 있어요' : m.body); return; }
+    if (m.kind === 'system') { add('sys', m.body === 'friend_added' ? '친구가 됐어요. 친구 목록에서 언제든 다시 대화할 수 있어요' : m.body?.startsWith('call:') ? callText(m.body, m.sender_id === S.uid) : m.body); return; }
     const who = m.sender_id === S.uid ? 'me' : 'you';
     const w = document.createElement('div'); w.className = 'msg ' + who;
     const b = document.createElement('div'); b.className = 'bubble';
@@ -1263,9 +1278,212 @@ $('#callRuleOk').onclick = () => {
   $('#caT').textContent = c.name + ' 님에게 ' + (face ? '페이스톡' : '보이스톡') + '을 걸까요?';
   $('#caMsg').textContent = '통화는 무료예요. 앱 안에서만 연결되고 전화번호는 서로 알 수 없어요.'; open('#callAskSheet');
 };
-$('#callAskOk').onclick = () => { $('#callAskSheet').hidden = true; toast('통화 연결은 곧 열려요'); };
+$('#callAskOk').onclick = () => { $('#callAskSheet').hidden = true; placeCall(S.pendingCall); };
 $('#voiceBtn').onclick = () => askCall(false); $('#faceBtn').onclick = () => askCall(true);
-$('#inDecline').onclick = $('#inAccept').onclick = () => { $('#incomingView').hidden = true; };
+
+// ── 보이스톡·페이스톡 (무료, WebRTC) ─────────────────────────
+// 소리·영상은 두 브라우저가 바로 주고받고 서버에는 남지 않는다. 연결 신호만 방 채널로 보낸다.
+// 신호 순서: 건 사람 ring(3초마다 다시) → 받은 사람 accept → 건 사람 offer → 받은 사람 answer → 서로 ice
+//            거절 decline / 통화 중 busy / 걸다가 취소 cancel / 끊기 end / 카메라 끔 cam
+// 통화 기록은 건 사람이 끝날 때 log_call 로 대화방에 남긴다 ("보이스톡 03:12").
+const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+const RING_SEC = 30, CONNECT_SEC = 25;
+const callWord = face => face ? '페이스톡' : '보이스톡';
+const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+let CALL = null;          // 지금 하는 통화 하나
+
+function callText(body, mine) {
+  const [, kind, result, sec] = body.split(':'), w = callWord(kind === 'face');
+  if (result === 'done') return w + ' ' + mmss(Number(sec) || 0);
+  if (result === 'missed') return mine ? '상대방이 ' + w + '을 받지 않았어요' : '받지 못한 ' + w + '이 있어요';
+  if (result === 'declined') return mine ? '상대방이 ' + w + '을 받을 수 없었어요' : w + '을 거절했어요';
+  if (result === 'busy') return mine ? '상대방이 통화 중이었어요' : '통화 중에 ' + w + '이 왔어요';
+  if (result === 'canceled') return mine ? w + '을 취소했어요' : '받지 못한 ' + w + '이 있어요';
+  return w + ' 연결이 안 됐어요';
+}
+{ // 통화 화면에 영상·소리 칸 넣기 (화면 파일은 그대로 두고 여기서)
+  const st = document.createElement('style');
+  st.textContent = '#callStage .rv{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:28px;background:#000}'
+    + '#callStage .pip{overflow:hidden;z-index:2}#callStage .pip video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}'
+    + '#callStage .remote-note{z-index:1}';
+  document.head.appendChild(st);
+  $('#callStage').insertAdjacentHTML('afterbegin', '<video class="rv" id="remoteVideo" autoplay playsinline muted hidden></video>');
+  $('#pip').insertAdjacentHTML('beforeend', '<video id="localVideo" autoplay playsinline muted></video>');
+  document.body.insertAdjacentHTML('beforeend', '<audio id="remoteAudio" autoplay></audio>');
+}
+function sendCall(room, cid, t, extra) { room.typingCh?.send({ type: 'broadcast', event: 'call', payload: { t, cid, ...extra } }); }
+
+async function getMedia(face) {
+  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('nomedia'), { name: 'NoMedia' });
+  return navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    video: face ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false });
+}
+function mediaErr(e, face) {
+  const what = face ? '마이크와 카메라' : '마이크';
+  if (e.name === 'NotAllowedError' || e.name === 'SecurityError') return what + ' 사용을 허용해야 통화할 수 있어요. 주소창 옆 자물쇠에서 허용해 주세요';
+  if (e.name === 'NotFoundError' || e.name === 'OverconstrainedError') return what + '를 찾을 수 없어요';
+  if (e.name === 'NotReadableError') return '다른 앱이 ' + what + '를 쓰고 있어요';
+  return '이 브라우저에서는 통화를 쓸 수 없어요';
+}
+
+function showCallView(state) {
+  const c = CALL, room = c.room, face = c.face;
+  $('#callKind').textContent = callWord(face); $('#callName').textContent = room.name; $('#callState').textContent = state;
+  $('#callAv').textContent = room.name[0]; $('#callAv').style.background = room.color; $('#callAv').hidden = false;
+  $('#callWarn').textContent = face ? '신체 노출·음란한 행동, 녹화 유포는 영구 정지와 처벌 대상이에요' : '음란한 말, 성매매 제안은 영구 정지와 처벌 대상이에요';
+  $('#callStage').classList.toggle('face', face);
+  $('#remoteNote').innerHTML = '상대방 영상을 기다리는 중…'; $('#remoteNote').hidden = !face;
+  $('#pip').hidden = !face; $('#camOffBtn').hidden = !face; $('#remoteVideo').hidden = true;
+  $('#muteBtn').setAttribute('aria-pressed', 'false'); $('#camOffBtn').setAttribute('aria-pressed', 'false');
+  const lv = $('#localVideo'); lv.srcObject = face ? c.stream : null; if (face) lv.play().catch(() => {});
+  $('#callView').hidden = false;
+}
+
+// 걸기
+async function placeCall(face) {
+  const room = S.rooms.get(S.cur);
+  if (!room || room.ended) return toast('끝난 대화에서는 통화할 수 없어요');
+  if (CALL) return toast('이미 통화 중이에요');
+  let stream; try { stream = await getMedia(face); } catch (e) { return toast(mediaErr(e, face)); }
+  if (CALL || room.ended) { stream.getTracks().forEach(t => t.stop()); return; }
+  CALL = { cid: crypto.randomUUID(), room, face, role: 'caller', stream, pc: null, ice: [], started: 0 };
+  showCallView('상대방을 부르는 중…');
+  await roomCh(room);
+  const c = CALL, ring = () => { if (CALL === c && !c.pc) sendCall(room, c.cid, 'ring', { face }); };
+  ring(); c.ringI = setInterval(ring, 3000);             // 신호를 놓칠 수 있어서 받을 때까지 다시 보냄
+  c.ringT = setTimeout(() => { if (CALL === c && !c.pc) finishCall('missed', '상대방이 받지 않았어요'); }, RING_SEC * 1000);
+}
+
+// 연결 만들기 (양쪽 공통)
+function makePC() {
+  const c = CALL, pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  c.pc = pc; clearInterval(c.ringI); clearTimeout(c.ringT);
+  c.stream.getTracks().forEach(t => pc.addTrack(t, c.stream));
+  pc.onicecandidate = e => { if (e.candidate && CALL === c) sendCall(c.room, c.cid, 'ice', { c: e.candidate.toJSON() }); };
+  pc.ontrack = e => {
+    const s = e.streams[0] || new MediaStream([e.track]);
+    const au = $('#remoteAudio'); if (au.srcObject !== s) { au.srcObject = s; au.play().catch(() => {}); }
+    if (c.face && e.track.kind === 'video') {
+      const rv = $('#remoteVideo'); rv.srcObject = s; rv.hidden = false; rv.play().catch(() => {});
+      $('#callAv').hidden = true; $('#remoteNote').hidden = true;
+    }
+  };
+  pc.onconnectionstatechange = () => {
+    if (CALL !== c) return;
+    const st = pc.connectionState;
+    if (st === 'connected') { clearTimeout(c.lostT); goLive(); }
+    else if (st === 'failed') finishCall('failed', '연결이 안 됐어요. 와이파이나 데이터를 바꿔서 다시 걸어 보세요');
+    else if (st === 'disconnected') { $('#callState').textContent = '연결이 불안정해요…';
+      clearTimeout(c.lostT); c.lostT = setTimeout(() => { if (CALL === c && pc.connectionState !== 'connected') finishCall('failed', '연결이 끊어졌어요'); }, 8000); }
+  };
+  c.connT = setTimeout(() => { if (CALL === c && !c.started) finishCall('failed', '연결이 안 됐어요. 와이파이나 데이터를 바꿔서 다시 걸어 보세요'); }, CONNECT_SEC * 1000);
+  return pc;
+}
+function goLive() {
+  const c = CALL; if (!c || c.started) return;
+  c.started = Date.now(); clearTimeout(c.connT);
+  const tick = () => { if (CALL === c) $('#callState').textContent = mmss(Math.floor((Date.now() - c.started) / 1000)); };
+  tick(); c.timer = setInterval(tick, 1000);
+}
+async function flushIce(c) { const list = c.ice; c.ice = []; for (const x of list) { try { await c.pc.addIceCandidate(x); } catch {} } }
+
+// 끝내기. result: 건 사람이 남길 기록(통화가 이어졌으면 무조건 done). tell: 상대에게 알릴지
+function finishCall(result, msg, tell = true) {
+  const c = CALL; if (!c) return; CALL = null;
+  [c.ringT, c.connT, c.lostT].forEach(clearTimeout); [c.ringI, c.timer].forEach(clearInterval);
+  if (tell) sendCall(c.room, c.cid, c.role === 'caller' && !c.pc ? 'cancel' : 'end');
+  try { c.pc?.close(); } catch {}
+  c.stream.getTracks().forEach(t => t.stop());
+  ['#remoteAudio', '#remoteVideo', '#localVideo'].forEach(x => { $(x).srcObject = null; });
+  $('#callView').hidden = true;
+  const sec = c.started ? Math.round((Date.now() - c.started) / 1000) : 0;
+  if (c.role === 'caller')
+    sb.rpc('log_call', { p_room: c.room.id, p_face: c.face, p_result: c.started ? 'done' : (result === 'ended' ? 'canceled' : result), p_seconds: sec }).then(() => {});
+  if (msg) toast(msg);
+}
+$('#endCallBtn').onclick = () => { const c = CALL; if (!c) { $('#callView').hidden = true; return; }
+  finishCall(c.started ? 'done' : 'canceled', c.started ? '통화를 끊었어요 · ' + mmss(Math.floor((Date.now() - c.started) / 1000)) : '통화를 취소했어요'); };
+$('#muteBtn').onclick = () => { if (!CALL) return; const off = $('#muteBtn').getAttribute('aria-pressed') !== 'true';
+  CALL.stream.getAudioTracks().forEach(t => t.enabled = !off); $('#muteBtn').setAttribute('aria-pressed', off); };
+$('#camOffBtn').onclick = () => { if (!CALL) return; const off = $('#camOffBtn').getAttribute('aria-pressed') !== 'true';
+  CALL.stream.getVideoTracks().forEach(t => t.enabled = !off); $('#camOffBtn').setAttribute('aria-pressed', off);
+  $('#localVideo').style.visibility = off ? 'hidden' : ''; sendCall(CALL.room, CALL.cid, 'cam', { off }); };
+addEventListener('pagehide', () => { if (CALL) finishCall('canceled', null); });
+
+// 전화 오는 화면
+let ringTone = null;
+function startRingTone() {
+  stopRingTone();
+  try { navigator.vibrate?.([400, 300, 400, 900]); } catch {}
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const beep = () => { [0, 0.45].forEach(d => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 660; g.gain.value = 0.06;
+      o.connect(g).connect(ac.destination); o.start(ac.currentTime + d); o.stop(ac.currentTime + d + 0.3); }); try { navigator.vibrate?.([400, 300, 400]); } catch {} };
+    beep(); ringTone = { ac, i: setInterval(beep, 2200) };
+  } catch {}
+}
+function stopRingTone() { if (ringTone) { clearInterval(ringTone.i); ringTone.ac.close().catch(() => {}); ringTone = null; } try { navigator.vibrate?.(0); } catch {} }
+function showIncoming(room, cid, face) {
+  S.incoming = { room, cid, face };
+  $('#inKind').textContent = callWord(face); $('#inAv').textContent = room.name[0]; $('#inAv').style.background = room.color;
+  $('#inName').textContent = room.name; $('#inSub').textContent = callWord(face) + '을 걸었어요 · 받는 건 무료예요';
+  $('#inRule').textContent = face ? '신체 노출·음란한 행동은 영구 정지 대상이에요. 불편하면 바로 끊고 신고해 주세요.' : '음란한 말, 성매매 제안은 영구 정지 대상이에요. 불편하면 바로 끊고 신고해 주세요.';
+  $('#incomingView').hidden = false; startRingTone();
+  clearTimeout(S.inT); S.inT = setTimeout(() => { if (S.incoming?.cid === cid) hideIncoming(); }, (RING_SEC + 3) * 1000);
+}
+function hideIncoming() { clearTimeout(S.inT); S.incoming = null; $('#incomingView').hidden = true; stopRingTone(); }
+$('#inDecline').onclick = () => { const inc = S.incoming; hideIncoming(); if (inc) sendCall(inc.room, inc.cid, 'decline'); };
+$('#inAccept').onclick = async () => {
+  const inc = S.incoming; hideIncoming(); if (!inc) return;
+  if (CALL) { sendCall(inc.room, inc.cid, 'busy'); return; }
+  let stream; try { stream = await getMedia(inc.face); } catch (e) { sendCall(inc.room, inc.cid, 'decline'); return toast(mediaErr(e, inc.face)); }
+  if (CALL || inc.room.ended) { stream.getTracks().forEach(t => t.stop()); return; }
+  CALL = { cid: inc.cid, room: inc.room, face: inc.face, role: 'callee', stream, pc: null, ice: [], started: 0 };
+  if (S.cur !== inc.room.id) openChat(inc.room);
+  showCallView('연결하는 중…'); makePC();
+  sendCall(inc.room, inc.cid, 'accept');
+};
+
+// 상대가 보낸 통화 신호 처리
+async function onCallSignal(room, p) {
+  const mine = CALL && CALL.cid === p.cid ? CALL : null;
+  try {
+    switch (p.t) {
+      case 'ring':
+        if (mine || S.incoming?.cid === p.cid) return;                      // 같은 부르기를 다시 받은 것
+        if (CALL || S.incoming || room.ended) { sendCall(room, p.cid, 'busy'); return; }
+        showIncoming(room, p.cid, !!p.face); return;
+      case 'cancel':
+        if (S.incoming?.cid === p.cid) { const f = S.incoming.face; hideIncoming(); toast('상대방이 ' + callWord(f) + '을 취소했어요'); } return;
+      case 'accept':
+        if (!mine || mine.role !== 'caller' || mine.pc) return;
+        $('#callState').textContent = '연결하는 중…';
+        { const pc = makePC(); await pc.setLocalDescription(await pc.createOffer());
+          sendCall(room, mine.cid, 'offer', { sdp: pc.localDescription.toJSON() }); }
+        return;
+      case 'offer':
+        if (!mine || mine.role !== 'callee' || !mine.pc || mine.pc.remoteDescription) return;
+        await mine.pc.setRemoteDescription(p.sdp); await flushIce(mine);
+        await mine.pc.setLocalDescription(await mine.pc.createAnswer());
+        sendCall(room, mine.cid, 'answer', { sdp: mine.pc.localDescription.toJSON() }); return;
+      case 'answer':
+        if (!mine || mine.role !== 'caller' || !mine.pc || mine.pc.remoteDescription) return;
+        await mine.pc.setRemoteDescription(p.sdp); await flushIce(mine); return;
+      case 'ice':
+        if (!mine || !p.c) return;
+        if (mine.pc?.remoteDescription) { try { await mine.pc.addIceCandidate(p.c); } catch {} } else mine.ice.push(p.c);
+        return;
+      case 'decline': if (mine && !mine.started) finishCall('declined', '상대방이 지금은 받을 수 없어요', false); return;
+      case 'busy': if (mine && !mine.started && !mine.pc) finishCall('busy', '상대방이 통화 중이에요', false); return;
+      case 'end': if (mine) finishCall('canceled', mine.started ? '상대방이 통화를 끊었어요' : '통화가 연결되지 않았어요', false); return;
+      case 'cam':
+        if (mine?.face) { $('#remoteVideo').style.visibility = p.off ? 'hidden' : ''; $('#callAv').hidden = !p.off;
+          $('#remoteNote').textContent = '상대방이 카메라를 껐어요'; $('#remoteNote').hidden = !p.off; }
+        return;
+    }
+  } catch (e) { console.warn('call signal', p.t, e); if (mine && CALL === mine) finishCall('failed', '연결이 안 됐어요. 다시 걸어 보세요'); }
+}
 
 // ── 친구 탭 ───────────────────────────────────────────────
 function renderList() {
@@ -1381,7 +1599,9 @@ $('#writeConfirm').onclick = async () => {
 
 // ── 시작 ─────────────────────────────────────────────────
 async function afterLogin() {
-  await refreshMe(); setLoginUI(); listenMine(); joinLobby(); await loadRooms();
+  await refreshMe(); setLoginUI(); listenMine(); joinLobby();
+  try { await sb.realtime.setAuth(); } catch {}         // 비공개 방 채널(입력 중·통화 신호)에 내 로그인 정보를 씀
+  await loadRooms();
   goTab('match');
 }
 $('#qdayQ').textContent = todayQ();
