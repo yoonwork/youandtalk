@@ -1,4 +1,4 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html><html lang="ko"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <link rel="preload" href="pretendard-400.woff2" as="font" type="font/woff2" crossorigin>
 <title>유앤톡</title>
 <meta name="description" content="버튼 하나로 처음 보는 사람과 대화하는 1:1 랜덤채팅">
@@ -525,7 +525,7 @@ body,.app,#v-chat{background:var(--page)}
         <section class="gsec">
           <h2>성별</h2>
           <div class="sexcards" id="mySex">
-            <button class="sexcard" aria-pressed="true" data-v="남"><span class="ck"></span>남성</button>
+            <button class="sexcard" aria-pressed="false" data-v="남"><span class="ck"></span>남성</button>
             <button class="sexcard" aria-pressed="false" data-v="여"><span class="ck"></span>여성</button>
           </div>
         </section>
@@ -533,7 +533,7 @@ body,.app,#v-chat{background:var(--page)}
         <section class="gsec">
           <h2>약관 동의</h2>
           <label class="sub" for="birth">출생연도</label>
-          <input class="yinput" id="birth" inputmode="numeric" maxlength="4" placeholder="YYYY" autocomplete="off">
+          <input class="yinput" id="birth" inputmode="numeric" maxlength="4" placeholder="예: 1995" autocomplete="off">
           <button class="allagree" id="allAgree" aria-pressed="false"><span class="ck"></span>모두 동의해요</button>
           <ul class="agrees">
             <li><button class="ag" data-ag="terms" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span><u>이용약관 동의</u> (필수)</span></button></li>
@@ -542,6 +542,7 @@ body,.app,#v-chat{background:var(--page)}
           </ul>
         </section>
 
+        <p style="margin:10px 0 0;font-size:13px;color:#7A8499;text-align:center"><a href="terms.html" target="_blank" style="color:inherit">이용약관</a> · <a href="privacy.html" target="_blank" style="color:inherit">개인정보 처리방침</a> 전문 보기</p>
         <button class="cta" id="verifyBtn" disabled>시작하기</button>
         <small class="gate-foot">나이를 속이면 이용이 정지될 수 있어요 · 앱에서는 휴대폰 인증으로 확인해요</small>
       </div>
@@ -858,7 +859,7 @@ body,.app,#v-chat{background:var(--page)}
   <button class="ghost" data-close>취소</button>
 </div></div>
 
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script type="module">
 // 유앤톡 웹 — 실제 서버(Supabase)에 연결된 버전
@@ -880,7 +881,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storage, storageKe
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
 const S = { uid: null, anon: true, me: null, tab: 'match', filter: 'all', rooms: new Map(), cur: null,
-  waiting: false, wantOpp: false, country: 'all', lang: 'ko', mySex: '남', delTarget: null, blocked: [], board: 'q', hb: null };
+  waiting: false, wantOpp: false, country: 'all', lang: 'ko', mySex: null, delTarget: null, blocked: [], board: 'q', hb: null };
 
 const COUNTRIES = [['all', '모든 국가'], ['kr', '대한민국'], ['jp', '일본'], ['us', '미국'], ['tw', '대만'], ['vn', '베트남'], ['ph', '필리핀']];
 const LANGS = [['ko', '한국어'], ['en', 'English'], ['ja', '日本語']];
@@ -889,11 +890,13 @@ const ERR = {
   UNDERAGE: '만 19세 미만은 이용할 수 없어요', LOGIN_REQUIRED: '로그인한 사람만 쓸 수 있어요', NOT_ENOUGH_POINTS: '포인트가 부족해요',
   BANNED: '이용이 정지된 계정이에요', ROOM_ENDED: '이미 끝난 대화예요', PARTNER_NOT_LOGGED_IN: '상대가 로그인하지 않아서 친구로 추가할 수 없어요',
   ALREADY_FRIEND: '이미 친구예요', NOT_IN_ROOM: '대화방을 찾을 수 없어요', NO_PROFILE: '처음 정보부터 다시 입력해 주세요', BAD_INPUT: '다시 시도해 주세요',
-  TOO_FAST: '너무 빨리 보내고 있어요. 잠시 후 다시 보내 주세요'
+  TOO_FAST: '너무 빨리 보내고 있어요. 잠시 후 다시 보내 주세요', NO_SESSION: '접속이 끊겼어요. 새로고침해 주세요'
 };
 // 회원 = 카카오·구글이 실제로 연결된 계정 (서버 private.is_anon 과 같은 기준)
 const isMember = u => !!u && (u.identities || []).some(i => i.provider === 'kakao' || i.provider === 'google');
-const errMsg = e => { const m = e?.message || ''; for (const k in ERR) if (m.includes(k)) return ERR[k]; return '연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요'; };
+const errMsg = e => { const m = e?.message || ''; for (const k in ERR) if (m.includes(k)) return ERR[k];
+  if (/row-level security|violates/i.test(m)) return '보낼 수 없어요. 대화가 끝났거나 오늘 올릴 수 있는 개수를 넘었어요';
+  return '연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요'; };
 
 const QUESTIONS = ['요즘 가장 자주 듣는 노래는?', '오늘 하루 중 제일 좋았던 순간은?', '지금 당장 떠날 수 있다면 어디로 갈래요?', '최근에 웃겼던 일 하나만 알려 주세요',
   '주말마다 하는 나만의 루틴이 있나요?', '어릴 때 꿈은 뭐였어요?', '요즘 빠져 있는 음식은?', '하루가 25시간이면 남는 1시간에 뭐 할래요?',
@@ -905,7 +908,7 @@ const fmt = n => n.toLocaleString('ko-KR');
 const clock = d => { d = d ? new Date(d) : new Date(); const h = d.getHours(), m = String(d.getMinutes()).padStart(2, '0'); return (h < 12 ? '오전 ' : '오후 ') + (h % 12 || 12) + ':' + m; };
 function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => el.hidden = true, 2400); }
 const open = id => { $(id).hidden = false; };
-const countryName = c => (COUNTRIES.find(x => x[0] === c) || [, c?.toUpperCase() || ''])[1];
+const countryName = c => (COUNTRIES.find(x => x[0] === c) || [, '해외'])[1];
 
 // ── 화면 전환 ─────────────────────────────────────────────
 const tabViews = { match: '#v-match', board: '#v-board', list: '#v-list', settings: '#v-settings' };
@@ -926,10 +929,10 @@ function syncAgree() {
   $$('.ag').forEach(b => b.setAttribute('aria-pressed', agreed[b.dataset.ag]));
   const all = Object.values(agreed).every(Boolean);
   $('#allAgree').setAttribute('aria-pressed', all);
-  $('#verifyBtn').disabled = !(all && /^\d{4}$/.test($('#birth').value));
+  $('#verifyBtn').disabled = !(all && S.mySex && /^\d{4}$/.test($('#birth').value));
 }
 $('#mySex').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
-  $$('#mySex button').forEach(x => x.setAttribute('aria-pressed', x === b)); S.mySex = b.dataset.v; });
+  $$('#mySex button').forEach(x => x.setAttribute('aria-pressed', x === b)); S.mySex = b.dataset.v; syncAgree(); });
 $$('.ag').forEach(b => b.onclick = () => { agreed[b.dataset.ag] = !agreed[b.dataset.ag]; syncAgree(); });
 $('#allAgree').onclick = () => { const v = !Object.values(agreed).every(Boolean); Object.keys(agreed).forEach(k => agreed[k] = v); syncAgree(); };
 $('#birth').addEventListener('input', e => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); syncAgree(); });
@@ -965,8 +968,11 @@ function updPaid() { $('#paidLabel').textContent = (S.me?.sex === 'f' ? '남성'
 function setLoginUI() {
   const on = !S.anon;
   $('#loginCardBtn').textContent = on ? '로그인됨' : '로그인'; $('#loginCardBtn').classList.toggle('on', on);
-  $('#loginText').innerHTML = on ? '<b>로그인됨</b>사진 보내기·친구 추가·성별 고르기를 쓸 수 있어요'
-    : '<b>로그인 없이 바로 대화할 수 있어요</b>로그인하면 사진 보내기·친구 추가·성별 고르기를 쓸 수 있어요';
+  $('#loginText').innerHTML = on ? '<b>로그인됨</b>이야기 게시판을 쓸 수 있어요. 사진·친구 추가는 앱에서 포인트로 할 수 있어요'
+    : '<b>로그인 없이 바로 대화할 수 있어요</b>로그인하면 이야기 게시판을 쓸 수 있어요';
+  const opp = $('#paidLabel')?.nextElementSibling; if (opp) opp.hidden = !on;                 // "10P"
+  const fe = $('#mFriend em'); if (fe) fe.hidden = !on;                                        // "20P"
+  $('#camBtn').setAttribute('aria-label', on ? '사진 보내기 (5P)' : '사진 보내기');
   $('#sLoginState').textContent = on ? '로그인됨' : '안 함';
   $('#ptsBtn').hidden = !on;                       // 비회원에게는 포인트 표시 자체를 안 보여줌
   const delRow = $('#sDelete')?.closest('li'); if (delRow) delRow.hidden = !on;   // 탈퇴는 회원만
@@ -982,11 +988,12 @@ $('#loginCardBtn').onclick = () => { if (S.anon) open('#loginSheet'); };
 //   신고·정지와 얽힌 계정은 서버가 그 대화 기록만 신고 처리용으로 남기고(최대 1년) 나머지는 지운다.
 async function resetApp(msg, wipe) {
   if (!confirm(msg)) return;
-  S.waiting = false; clearInterval(S.hb);
+  S.waiting = false; clearInterval(S.hb); S.resetting = true;
   try { if (CALL) finishCall('canceled', null); } catch {}
+  if (!wipe) for (const r of S.rooms.values()) if (!r.ended && !r.friend) { try { await sb.rpc('leave_room', { p_room: r.id }); } catch {} }
   if (wipe && S.uid) {
     const { data, error } = await sb.rpc('delete_my_account');
-    if (error && !/NO_SESSION/.test(error.message || '')) { toast(errMsg(error)); return; }
+    if (error && !/NO_SESSION/.test(error.message || '')) { S.resetting = false; toast(errMsg(error)); return; }
     if (data === 'kept') alert('탈퇴했어요.\n신고 처리 중인 대화가 있어서 그 대화 기록만 처리가 끝날 때까지(최대 1년) 따로 보관한 뒤 지워요.');
   }
   try { await sb.removeAllChannels(); } catch {}
@@ -1057,7 +1064,7 @@ $('#ptsBtn').onclick = $('#sPoints').onclick = () => {
   if (S.anon) { $('#loginMsg').textContent = '포인트는 로그인한 회원만 받고 쓸 수 있어요. 일반 채팅은 로그인 없이도 무료예요.'; open('#loginSheet'); return; }
   $('#shopMsg').textContent = '포인트 충전은 앱에서 할 수 있어요. 앱은 준비 중이에요.'; open('#shopSheet');
 };
-$$('#shopSheet [data-add]').forEach(b => b.onclick = () => toast('포인트 충전은 앱에서 할 수 있어요 (준비 중)'));
+$$('#shopSheet [data-add]').forEach(b => { b.hidden = true; b.onclick = () => toast('포인트 충전은 앱에서 할 수 있어요 (준비 중)'); });   // 웹에서는 가격 버튼 숨김
 async function refreshMe() { const { data } = await sb.from('profiles').select('*').maybeSingle(); if (data) { S.me = data; setPoints(data.points); updPaid(); } }
 
 // ── 접속자 수 (presence) ──────────────────────────────────
@@ -1120,7 +1127,7 @@ function updateBadges() {
   b.textContent = n > 99 ? '99+' : n; b.hidden = !n; b.setAttribute('aria-label', '안 읽은 메시지 ' + n + '개');
 }
 function askNotifyOnce() {
-  try { if (!('Notification' in window) || Notification.permission !== 'default' || storage.getItem('youandtalk-notify-asked')) return;
+  try { if (/Android/i.test(navigator.userAgent) || !('Notification' in window) || Notification.permission !== 'default' || storage.getItem('youandtalk-notify-asked')) return;
     storage.setItem('youandtalk-notify-asked', '1'); Notification.requestPermission().catch(() => {}); } catch {}
 }
 function notify(title, body, tag, onClick) {
@@ -1140,6 +1147,11 @@ function onAnyMessage(m) {
   }
   renderList();
 }
+// 휴대폰에서 다른 앱에 갔다 오면 대기 줄에 "아직 기다려요"를 바로 알리고, 그새 짝이 맺어졌는지 확인
+document.addEventListener('visibilitychange', async () => {
+  if (document.hidden || !S.waiting) return;
+  const { data: rid } = await sb.rpc('match_heartbeat'); if (rid) onMatched(rid);
+});
 document.addEventListener('visibilitychange', () => { const r = S.rooms.get(S.cur); if (r && chatOpen(r)) { markReadLatest(r); renderList(); } });
 async function fetchRoom(id) {
   const { data } = await sb.from('rooms').select('*').eq('id', id).maybeSingle();
@@ -1181,7 +1193,9 @@ async function startMatch() {
   $('#matchHint').textContent = S.wantOpp ? $('#paidLabel').textContent.replace('만', '') + '과 연결하고 있어요' : '대기 중인 사람과 연결하고 있어요';
   const { data, error } = await sb.rpc('find_match', {
     p_want_sex: S.wantOpp ? (S.me.sex === 'm' ? 'f' : 'm') : null, p_want_country: S.country, p_lang: S.lang });
-  if (error) { S.waiting = false; toast(errMsg(error)); goTab('match'); return; }
+  if (error) { S.waiting = false;
+    if (/NO_PROFILE/.test(error.message || '')) { show('#v-gate'); return toast(ERR.NO_PROFILE); }
+    toast(/TOO_FAST/.test(error.message || '') ? '잠시 후 다시 눌러 주세요' : errMsg(error)); goTab('match'); return; }
   refreshMe();
   if (data.status === 'matched') return onMatched(data.room_id);
   clearInterval(S.hb);
@@ -1191,10 +1205,14 @@ async function startMatch() {
   }, 4000);
 }
 async function onMatched(id) {
-  if (!S.waiting) return; S.waiting = false; clearInterval(S.hb);
+  if (!S.waiting) {   // 취소를 누른 바로 그때 짝이 맺어졌으면, 상대가 혼자 기다리지 않게 그 방에서 나감
+    if (Date.now() - (S.cancelledAt || 0) < 15000) sb.rpc('leave_room', { p_room: id }).then(() => {});
+    return;
+  }
+  S.waiting = false; clearInterval(S.hb);
   const room = await fetchRoom(id); if (room) { room.fresh = true; openChat(room); }
 }
-async function cancelMatch() { S.waiting = false; clearInterval(S.hb); goTab('match'); await sb.rpc('cancel_match'); refreshMe(); }
+async function cancelMatch() { S.waiting = false; S.cancelledAt = Date.now(); clearInterval(S.hb); goTab('match'); await sb.rpc('cancel_match'); refreshMe(); }
 $('#cancelMatch').onclick = cancelMatch;
 $('#startBtn').onclick = () => { askNotifyOnce(); startMatch(); };
 $('#wantSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
@@ -1216,7 +1234,7 @@ $('#newMatchBtn').onclick = () => goTab('match');
 async function openChat(room) {
   S.cur = room.id;
   $('#cAv').textContent = room.name[0]; $('#cAv').style.background = room.color; $('#cName').textContent = room.name;
-  show('#v-chat');
+  show('#v-chat'); S.forceBottom = true;
   if (!room.msgs) {
     room.msgs = [];
     const { data } = await sb.from('messages').select('*').eq('room_id', room.id).order('id').limit(300);
@@ -1250,7 +1268,7 @@ function upsertMsg(room, m) {
 }
 function renderHead() {
   const c = S.rooms.get(S.cur), st = $('#cState');
-  ['#voiceBtn', '#faceBtn', '#menuBtn'].forEach(x => $(x).hidden = false);
+  ['#voiceBtn', '#faceBtn'].forEach(x => $(x).hidden = !!c.ended); $('#menuBtn').hidden = false;
   st.textContent = c.ended ? '대화 종료' : (c.friend ? '친구 · ' : '') + (c.sex === 'm' ? '남자' : '여자') + ' · ' + c.age + '세 · ' + c.region;
   st.className = c.ended ? '' : 'live-s';
   $('#composer').hidden = c.ended; $('#endedBar').hidden = !c.ended;
@@ -1261,7 +1279,9 @@ const LAW = '<ul><li>성매매는 불법이에요. 성을 사고팔거나 알선
 function renderChat() {
   const c = S.rooms.get(S.cur); if (!c) return;
   renderHead();
-  const log = $('#log'); log.innerHTML = '';
+  const log = $('#log');
+  const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 150, prevTop = log.scrollTop;
+  log.innerHTML = '';
   const law = document.createElement('div'); law.className = 'law'; law.innerHTML = LAW; log.appendChild(law);
   const add = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; log.appendChild(d); };
   add('day', '오늘');
@@ -1281,7 +1301,7 @@ function renderChat() {
     if (who === 'me' && !m.deleted_at) attachDelete(w, m);
   });
   if (c.ended) add('sys', c.endedByMe ? '대화를 나갔어요' : '상대방이 대화를 나갔어요');
-  log.scrollTop = log.scrollHeight;
+  log.scrollTop = nearBottom || S.forceBottom ? log.scrollHeight : prevTop; S.forceBottom = false;
 }
 // 사진·동영상 칸은 메시지마다 한 번만 만들어 다시 씀 → 새 메시지가 와도 보던 동영상이 멈추지 않음
 const mediaEls = new Map();
@@ -1302,7 +1322,8 @@ function mediaEl(m) {
 let typingT;
 function showTyping() {
   hideTyping(); const t = document.createElement('div'); t.className = 'typing'; t.id = 'typingDots'; t.innerHTML = '<i></i><i></i><i></i>';
-  $('#log').appendChild(t); $('#log').scrollTop = 1e9; clearTimeout(typingT); typingT = setTimeout(hideTyping, 3500);
+  const log = $('#log'), near = log.scrollHeight - log.scrollTop - log.clientHeight < 150;   // 위로 올려 읽는 중이면 그대로
+  log.appendChild(t); if (near) log.scrollTop = 1e9; clearTimeout(typingT); typingT = setTimeout(hideTyping, 3500);
 }
 function hideTyping() { $('#typingDots')?.remove(); }
 let lastTyping = 0;
@@ -1315,7 +1336,7 @@ $('#composer').addEventListener('submit', async e => {
   $('#msgInput').value = '';
   const { data, error } = await sb.from('messages').insert({ room_id: c.id, sender_id: S.uid, kind: 'text', body: v.slice(0, 1000) }).select().single();
   if (error) { toast(errMsg(error)); $('#msgInput').value = v; return; }
-  upsertMsg(c, data); renderChat();
+  upsertMsg(c, data); S.forceBottom = true; renderChat();
 });
 // 사진·동영상: 한 개씩, 미리보기로 "이 사진(동영상)을 보낼까요?" 확인 후 보냄. 회원만.
 //   사진 5P: 긴 변 1280px JPEG로 줄여서 photos 버킷에
@@ -1442,11 +1463,13 @@ const CALL_RULES = {
   face: ['<b>신체 노출</b>, 음란한 행동을 보여주거나 요구하면 바로 영구 정지되고 처벌받을 수 있어요.', '성매매·조건 만남 제안, 돈 요구, 연락처·외부 앱 유도는 금지예요.', '상대 동의 없이 화면을 녹화·캡처해 퍼뜨리면 처벌받아요.', '불편하면 바로 끊고 신고해 주세요.']
 };
 // 통화 규칙(서버 call_allowed): 랜덤 상대와는 서로 메시지를 3개 이상씩 주고받은 뒤에. 친구는 바로.
-const CALL_RULE_MSG = { NEED_MORE_CHAT: '서로 메시지를 3개 이상씩 주고받은 뒤에 통화할 수 있어요', ROOM_ENDED: '끝난 대화에서는 통화할 수 없어요' };
+const CALL_RULE_MSG = { NEED_MORE_CHAT: '서로 메시지를 3개 이상씩 주고받은 뒤에 통화할 수 있어요', ROOM_ENDED: '끝난 대화에서는 통화할 수 없어요',
+  NET: '통화 연결을 준비하지 못했어요. 잠시 후 다시 걸어 주세요' };
 async function askCall(face) {
   const c = S.rooms.get(S.cur); if (!c || c.ended) return toast('끝난 대화에서는 통화할 수 없어요');
   const { data: rule, error } = await sb.rpc('call_allowed', { p_room: c.id, p_face: face });
-  if (!error && rule !== 'ok') return toast(CALL_RULE_MSG[rule] || '지금은 통화할 수 없어요');
+  if (error) return toast(errMsg(error));
+  if (rule !== 'ok') return toast(CALL_RULE_MSG[rule] || '지금은 통화할 수 없어요');
   S.pendingCall = face; $('#crT').textContent = (face ? '페이스톡' : '보이스톡') + ' 전에 꼭 지켜 주세요';
   $('#callRules').innerHTML = CALL_RULES[face ? 'face' : 'voice'].map(t => '<li>' + t + '</li>').join(''); open('#callRuleSheet');
 }
@@ -1466,22 +1489,22 @@ $('#voiceBtn').onclick = () => askCall(false); $('#faceBtn').onclick = () => ask
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
 // 통화 중계 서버(Cloudflare TURN) 출입증: 서버 함수 turn-credentials 가 3시간짜리를 준다.
 // 받으면 모든 통화를 중계 서버로만 연결 → 상대가 내 IP 주소를 알 수 없음.
-// 키가 아직 없거나 실패하면 예전처럼 바로 연결(구글 STUN).
+// 키를 아직 안 넣었을 때(TURN_NOT_CONFIGURED)만 예전처럼 바로 연결. 그 밖의 실패는 IP 가 드러나지 않게 통화를 막음.
 const iceCache = new Map();
 async function iceConfig(room, face) {
   const hit = iceCache.get(room.id); if (hit && hit.until > Date.now()) return hit.cfg;
-  let cfg = { iceServers: ICE_SERVERS };
   try {
     const call = sb.functions.invoke('turn-credentials', { body: { room: room.id, face: !!face } });
-    const { data, error } = await Promise.race([call, new Promise(r => setTimeout(() => r({ error: 'timeout' }), 5000))]);
-    // 통화 규칙에 막히면 통화하지 않음 (예전처럼 바로 연결로 넘어가지 않게)
-    if (error?.context?.status === 403) { const body = await error.context.json().catch(() => ({})); if (CALL_RULE_MSG[body.error]) return { blocked: body.error }; }
+    const { data, error } = await Promise.race([call, new Promise(r => setTimeout(() => r({ error: 'timeout' }), 8000))]);
     if (!error && data?.iceServers?.length) {
-      cfg = { iceServers: data.iceServers, iceTransportPolicy: 'relay' };
+      const cfg = { iceServers: data.iceServers, iceTransportPolicy: 'relay' };
       iceCache.set(room.id, { cfg, until: Date.now() + (Number(data.ttl) || 3600) * 1000 - 10 * 60 * 1000 });
+      return cfg;
     }
-  } catch {}
-  return cfg;
+    const body = error?.context?.json ? await error.context.json().catch(() => ({})) : {};
+    if (body.error === 'TURN_NOT_CONFIGURED') return { iceServers: ICE_SERVERS };
+    return { blocked: CALL_RULE_MSG[body.error] ? body.error : 'NET' };
+  } catch { return { blocked: 'NET' }; }
 }
 const RING_SEC = 30, CONNECT_SEC = 25;
 const callWord = face => face ? '페이스톡' : '보이스톡';
@@ -1588,7 +1611,7 @@ async function flushIce(c) { const list = c.ice; c.ice = []; for (const x of lis
 
 // 끝내기. result: 건 사람이 남길 기록(통화가 이어졌으면 무조건 done). tell: 상대에게 알릴지
 function finishCall(result, msg, tell = true) {
-  const c = CALL; if (!c) return; CALL = null;
+  const c = CALL; if (!c) return; CALL = null; S.answering = null;
   [c.ringT, c.connT, c.lostT].forEach(clearTimeout); [c.ringI, c.timer].forEach(clearInterval);
   if (tell) sendCall(c.room, c.cid, c.role === 'caller' && !c.pc ? 'cancel' : 'end');
   try { c.pc?.close(); } catch {}
@@ -1610,18 +1633,22 @@ $('#camOffBtn').onclick = () => { if (!CALL) return; const off = $('#camOffBtn')
 addEventListener('pagehide', () => { if (CALL) finishCall('canceled', null); });
 
 // 전화 오는 화면
-let ringTone = null;
+let ringTone = null, sharedAC = null;
+function unlockAudio() {
+  try { sharedAC ||= new (window.AudioContext || window.webkitAudioContext)(); if (sharedAC.state === 'suspended') sharedAC.resume(); } catch {}
+}
+addEventListener('pointerdown', unlockAudio, { passive: true });
 function startRingTone() {
   stopRingTone();
   try { navigator.vibrate?.([400, 300, 400, 900]); } catch {}
   try {
-    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    unlockAudio(); const ac = sharedAC; if (!ac) return;
     const beep = () => { [0, 0.45].forEach(d => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 660; g.gain.value = 0.06;
       o.connect(g).connect(ac.destination); o.start(ac.currentTime + d); o.stop(ac.currentTime + d + 0.3); }); try { navigator.vibrate?.([400, 300, 400]); } catch {} };
     beep(); ringTone = { ac, i: setInterval(beep, 2200) };
   } catch {}
 }
-function stopRingTone() { if (ringTone) { clearInterval(ringTone.i); ringTone.ac.close().catch(() => {}); ringTone = null; } try { navigator.vibrate?.(0); } catch {} }
+function stopRingTone() { if (ringTone) { clearInterval(ringTone.i); ringTone = null; } try { navigator.vibrate?.(0); } catch {} }
 function showIncoming(room, cid, face) {
   S.incoming = { room, cid, face };
   $('#inKind').textContent = callWord(face); $('#inAv').textContent = room.name[0]; $('#inAv').style.background = room.color;
@@ -1637,6 +1664,7 @@ $('#inDecline').onclick = () => { const inc = S.incoming; hideIncoming(); if (!i
 $('#inAccept').onclick = async () => {
   const inc = S.incoming; hideIncoming(); if (!inc) return;
   if (CALL) { sendCall(inc.room, inc.cid, 'busy'); return; }
+  S.answering = inc.cid; setTimeout(() => { if (S.answering === inc.cid && !CALL) S.answering = null; }, 20000);
   let stream; try { stream = await getMedia(inc.face); } catch (e) { sendCall(inc.room, inc.cid, 'decline'); return toast(mediaErr(e, inc.face)); }
   const cfg = await iceConfig(inc.room, inc.face);
   if (cfg.blocked) { stream.getTracks().forEach(t => t.stop()); sendCall(inc.room, inc.cid, 'decline'); return toast(CALL_RULE_MSG[cfg.blocked]); }
@@ -1653,9 +1681,16 @@ async function onCallSignal(room, p) {
   try {
     switch (p.t) {
       case 'ring':
-        if (mine || S.incoming?.cid === p.cid) return;                      // 같은 부르기를 다시 받은 것
+        if (mine || S.incoming?.cid === p.cid || S.answering === p.cid || S.checkingRing === p.cid) return;                      // 같은 부르기를 다시 받은 것
         if (CALL || S.incoming || room.ended) { sendCall(room, p.cid, 'busy'); return; }
         if ((S.ringMute?.[room.id] || 0) > Date.now()) { sendCall(room, p.cid, 'decline'); return; }
+        { // 받는 쪽도 통화 규칙을 확인 (규칙 전에 억지로 거는 것 막기)
+          S.checkingRing = p.cid;
+          const { data: rule, error } = await sb.rpc('call_allowed', { p_room: room.id, p_face: !!p.face });
+          S.checkingRing = null;
+          if (error || rule !== 'ok') { sendCall(room, p.cid, 'decline'); return; }
+          if (CALL || S.incoming) return;
+        }
         showIncoming(room, p.cid, !!p.face); return;
       case 'cancel':
         if (S.incoming?.cid === p.cid) { const f = S.incoming.face; hideIncoming(); toast('상대방이 ' + callWord(f) + '을 취소했어요'); } return;
@@ -1765,7 +1800,7 @@ $('#sTheme').onclick = () => { ti = (ti + 1) % 3; const r = document.documentEle
 
 // ── 이야기 탭 (게시판): 로그인한 회원만 읽고 쓴다. 서버 표 posts / 함수 create_post·toggle_like·report_post·delete_post ──
 // 실시간 구독은 안 함. 탭을 열거나 게시판을 바꿀 때마다 최신 50개를 다시 불러온다.
-const BANNED = /(카톡|카카오|텔레|오픈채팅|오픈챗|인스타|디엠|\bdm\b|https?:|www\.|\.(com|net|kr|me|io|link)\b|조건|만남|만나요|용돈|스폰|\d{3,4}[- .]?\d{4})/i;
+const BANNED = /(카톡|카카오톡|카카오\s*(아이디|id)|텔레그램|텔레|오픈채팅|오픈챗|인스타|디엠|\bdm\b|라인\s*(아이디|id)|https?:|www\.|\.(com|net|kr|me|io|link)\b|조건\s*만남|조건만|용돈|스폰|01[016789][- .]?\d{3,4}[- .]?\d{4})/i;
 const POST_COLORS = ['#CDEFD9', '#D6E4FF', '#FFE1CC', '#E8DAFF', '#FFD6E5', '#CDEEF0'];
 const nameColor = n => POST_COLORS[[...n].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 6, 0)];
 const ago = d => { const m = Math.floor((Date.now() - new Date(d)) / 60000); return m < 1 ? '방금' : m < 60 ? m + '분 전' : m < 1440 ? Math.floor(m / 60) + '시간 전' : Math.floor(m / 1440) + '일 전'; };
@@ -1838,6 +1873,32 @@ async function afterLogin() {
 }
 $('#qdayQ').textContent = todayQ();
 $('#qdayDate').textContent = (new Date().getMonth() + 1) + '월 ' + new Date().getDate() + '일';
+{ // 아이폰: 16px 보다 작은 입력칸을 누르면 화면이 확대됨 → 터치 기기에서는 16px
+  const st = document.createElement('style'); st.textContent = '@media (pointer: coarse){input,textarea,select{font-size:16px!important}}'; document.head.appendChild(st);
+}
+// 안드로이드 뒤로 가기: 창·대화·대기 화면을 먼저 닫고, 첫 화면에서만 사이트를 나감
+function handleBack() {
+  const sheet = [...$$('.scrim')].find(x => !x.hidden); if (sheet) { sheet.hidden = true; return true; }
+  if (!$('#incomingView').hidden || !$('#callView').hidden) return true;
+  if (!$('#v-chat').hidden) { $('#backBtn').click(); return true; }
+  if (!$('#v-matching').hidden) { cancelMatch(); return true; }
+  if (!$('#v-gate').hidden) return false;
+  if (S.tab && S.tab !== 'match') { goTab('match'); return true; }
+  return false;
+}
+try { history.pushState({ yt: 1 }, ''); } catch {}
+addEventListener('popstate', () => { if (handleBack()) { try { history.pushState({ yt: 1 }, ''); } catch {} } else history.back(); });
+// 다른 탭에서 로그아웃했거나 세션이 끊기면 새로 시작
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT' && S.uid && !S.resetting) setTimeout(() => location.reload(), 0); });
+// 카카오톡 안의 브라우저는 구글 로그인·통화가 막힐 수 있음 → 다른 브라우저로 열기 안내
+if (/KAKAOTALK/i.test(navigator.userAgent)) {
+  const bar = document.createElement('div');
+  bar.setAttribute('role', 'note');
+  bar.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:40;background:#16203A;color:#fff;border-radius:14px;padding:12px 14px;display:flex;gap:10px;align-items:center;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.2)';
+  bar.innerHTML = '<span style="flex:1">카카오톡 안에서는 통화·구글 로그인이 안 될 수 있어요</span><button style="background:#2F7BFF;color:#fff;border:0;border-radius:10px;padding:8px 12px;font:inherit;font-weight:700;white-space:nowrap">다른 브라우저로 열기</button>';
+  bar.querySelector('button').onclick = () => { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href); };
+  document.body.appendChild(bar);
+}
 (async () => {
   try {
     await handleOAuthReturn();
