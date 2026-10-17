@@ -906,6 +906,14 @@ const QUESTIONS = ['요즘 가장 자주 듣는 노래는?', '오늘 하루 중 
   '주말마다 하는 나만의 루틴이 있나요?', '어릴 때 꿈은 뭐였어요?', '요즘 빠져 있는 음식은?', '하루가 25시간이면 남는 1시간에 뭐 할래요?',
   '최근에 본 것 중 추천하고 싶은 영화나 드라마는?', '스트레스 받을 때 나만의 푸는 방법은?', '올해 꼭 해보고 싶은 것 하나는?', '여름이 좋아요, 겨울이 좋아요?',
   '최애 편의점 조합은?', '혼자 할 때 제일 좋은 건 뭐예요?', '10년 전 나에게 한마디 한다면?', '지금 창밖 날씨는 어때요?', '요즘 제일 자주 쓰는 앱은?', '인생 맛집 하나만 알려 주세요'];
+QUESTIONS.push('내 MBTI랑 그거 믿는 편이에요?', '요즘 제일 갖고 싶은 물건은?', '아침형이에요, 저녁형이에요?', '최근에 배운 것 중 제일 재밌었던 건?',
+  '반려동물 키워 본 적 있어요?', '노래방 18번은?', '라면 끓일 때 나만의 비법 있어요?', '가장 기억에 남는 여행지는?', '요즘 자주 보는 유튜브는?',
+  '지금 내 방에서 제일 아끼는 물건은?', '비 오는 날 하고 싶은 건?', '로또 1등 되면 제일 먼저 할 일은?', '나를 한 단어로 표현하면?', '요즘 빠진 게임 있어요?',
+  '최근에 들은 칭찬 중 제일 좋았던 건?', '탕수육은 부먹이에요 찍먹이에요?', '혼밥 레벨은 어디까지 가능해요?', '어떤 계절 냄새를 제일 좋아해요?');
+// 대화방 질문: 처음엔 홈의 오늘의 질문, "다른 질문"을 누르면 방마다 정해진 순서로 바뀜 (두 사람이 같은 질문을 봄)
+const MOODS = { chat: '수다 떨기', worry: '고민 상담', bored: '심심해요', music: '음악 얘기', night: '잠 안 와요' };
+const MOOD_IC = { '': '🎲', chat: '💬', worry: '🫶', bored: '🥱', music: '🎧', night: '🌙' };
+const roomQ = c => { if (!c.qShift) return todayQ(); let h = 0; for (const ch of c.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return QUESTIONS[(h + (c.qShift || 0)) % QUESTIONS.length]; };
 const todayQ = () => { const d = new Date(); return QUESTIONS[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % QUESTIONS.length]; };
 
 const fmt = n => n.toLocaleString('ko-KR');
@@ -1108,7 +1116,7 @@ function toRoom(r) {
   const iAmA = r.user_a === S.uid, p = iAmA ? r.b_info : r.a_info;
   const old = S.rooms.get(r.id);
   return Object.assign(old || { msgs: null, ch: null, typingCh: null }, {
-    id: r.id, raw: r, name: p.name, color: p.color, sex: p.sex, age: p.age, region: p.region || countryName(p.country),
+    id: r.id, raw: r, mood: p.mood || null, myMood: (iAmA ? r.a_info : r.b_info)?.mood || null, name: p.name, color: p.color, sex: p.sex, age: p.age, region: p.region || countryName(p.country),
     friend: r.is_friend, ended: !!r.ended_at, endedByMe: r.ended_by === S.uid, createdAt: r.created_at,
     lastRead: Math.max(old?.lastRead || 0, Number(iAmA ? r.last_read_a : r.last_read_b) || 0)
   });
@@ -1219,9 +1227,9 @@ function listenMine() {
 async function startMatch() {
   if (S.wantOpp && !needLogin('성별 골라 만나기')) return;
   S.waiting = true; show('#v-matching');
-  $('#matchHint').textContent = S.wantOpp ? $('#paidLabel').textContent.replace('만', '') + '과 연결하고 있어요' : '대기 중인 사람과 연결하고 있어요';
+  $('#matchHint').textContent = S.mood ? MOODS[S.mood] + ' 하고 싶은 사람을 먼저 찾고 있어요' : S.wantOpp ? $('#paidLabel').textContent.replace('만', '') + '과 연결하고 있어요' : '대기 중인 사람과 연결하고 있어요';
   const { data, error } = await sb.rpc('find_match', {
-    p_want_sex: S.wantOpp ? (S.me.sex === 'm' ? 'f' : 'm') : null, p_want_country: S.country, p_lang: S.lang });
+    p_want_sex: S.wantOpp ? (S.me.sex === 'm' ? 'f' : 'm') : null, p_want_country: S.country, p_lang: S.lang, p_mood: S.mood || null });
   if (error) { S.waiting = false;
     if (/NO_PROFILE/.test(error.message || '')) { show('#v-gate'); return toast(ERR.NO_PROFILE); }
     toast(/TOO_FAST/.test(error.message || '') ? '잠시 후 다시 눌러 주세요' : errMsg(error)); goTab('match'); return; }
@@ -1315,8 +1323,19 @@ function renderChat() {
   const add = (cls, text) => { const d = document.createElement('div'); d.className = cls; d.textContent = text; log.appendChild(d); };
   add('day', '오늘');
   add('sys', '연결됐어요! 연락처나 돈 이야기는 조심하세요.\n친구 추가를 안 하면 대화가 끝난 뒤 다시 볼 수 없어요.');
-  const q = document.createElement('div'); q.className = 'qcard'; q.innerHTML = '<span>오늘의 질문</span><b></b><small>서로 답하면서 시작해 보세요</small>';
-  q.querySelector('b').textContent = todayQ(); log.appendChild(q);
+  if (c.mood || c.myMood) {   // 두 사람이 고른 분위기
+    const m = document.createElement('div'); m.className = 'moodnote';
+    m.textContent = c.mood && c.mood === c.myMood ? '둘 다 "' + MOODS[c.mood] + '"를 골랐어요'
+      : c.mood ? '상대는 "' + MOODS[c.mood] + '"를 골랐어요' : '상대는 "아무거나"를 골랐어요';
+    log.appendChild(m);
+  }
+  // 질문 카드: 두 사람에게 같은 질문(방마다 다름). "다른 질문"으로 바꾸고 "보내기"로 대화를 시작
+  const q = document.createElement('div'); q.className = 'qcard';
+  q.innerHTML = '<span>오늘의 질문</span><b></b><small>어색하면 이 질문으로 시작해 보세요</small>'
+    + (c.ended ? '' : '<div style="display:flex;gap:8px;justify-content:center;margin-top:8px"><button class="pill-btn" data-q="next">다른 질문</button><button class="pill-btn" data-q="send" style="background:var(--accent,#2F7BFF);color:#fff;box-shadow:none">이 질문 보내기</button></div>');
+  q.querySelector('b').textContent = roomQ(c); log.appendChild(q);
+  q.querySelector('[data-q="next"]')?.addEventListener('click', () => { c.qShift = (c.qShift || 0) + 1; q.querySelector('b').textContent = roomQ(c); });
+  q.querySelector('[data-q="send"]')?.addEventListener('click', () => { $('#msgInput').value = 'Q. ' + roomQ(c); $('#composer').requestSubmit(); });
   (c.msgs || []).forEach(m => {
     if (m.kind === 'system') { add('sys', m.body === 'friend_added' ? '친구가 됐어요. 친구 목록에서 언제든 다시 대화할 수 있어요' : m.body?.startsWith('call:') ? callText(m.body, m.sender_id === S.uid) : m.body); return; }
     const who = m.sender_id === S.uid ? 'me' : 'you';
@@ -1883,6 +1902,24 @@ async function afterLogin() {
   try { await sb.realtime.setAuth(); } catch {}         // 비공개 방 채널(입력 중·통화 신호)에 내 로그인 정보를 씀
   await loadRooms();
   goTab('match');
+}
+// 분위기 고르기: 같은 분위기를 고른 사람과 먼저 연결 (없으면 아무나). 기기에 기억해 둠
+{
+  const box = document.createElement('section'); box.className = 'moods'; box.setAttribute('aria-labelledby', 'moodT');
+  box.innerHTML = '<h2 id="moodT">지금 어떤 대화 하고 싶어요?</h2><div class="mood-grid" role="radiogroup" aria-labelledby="moodT">'
+    + [['', '아무거나'], ...Object.entries(MOODS)].map(([v, t]) => '<button role="radio" data-mood="' + v + '" aria-checked="false"><i aria-hidden="true">' + MOOD_IC[v] + '</i>' + t + '</button>').join('') + '</div>';
+  $('#wantSeg').before(box);
+  const pick = v => { S.mood = v || null; storage.setItem('youandtalk-mood', v || ''); box.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.mood === (v || ''))); };
+  box.addEventListener('click', e => { const b = e.target.closest('button'); if (b) pick(b.dataset.mood); });
+  const saved = storage.getItem('youandtalk-mood'); pick(saved && MOODS[saved] ? saved : '');
+  const st = document.createElement('style');
+  st.textContent = '.moods{margin-top:18px}.moods h2{font-size:15px;font-weight:700;margin:0 0 10px;letter-spacing:-.02em}'
+    + '.mood-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}'
+    + '.mood-grid button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;border-radius:18px;background:var(--soft);color:var(--ink);font-size:13.5px;font-weight:600}'
+    + '.mood-grid i{font-style:normal;font-size:20px;line-height:1}'
+    + '.mood-grid button[aria-checked="true"]{background:var(--accent);color:var(--accent-ink)}'
+    + '.moodnote{align-self:center;font-size:12.5px;font-weight:600;color:var(--accent-text,var(--accent));background:var(--accent-soft);border-radius:999px;padding:6px 12px;margin:2px 0 6px}';
+  document.head.appendChild(st);
 }
 $('#qdayQ').textContent = todayQ();
 $('#qdayDate').textContent = (new Date().getMonth() + 1) + '월 ' + new Date().getDate() + '일';
