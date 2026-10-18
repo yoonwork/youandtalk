@@ -1152,14 +1152,18 @@ $('#ptsBtn').onclick = $('#sPoints').onclick = () => {
 const TOSS_CLIENT_KEY = 'test_ck_D5GePWvyJnrK0W0k6q8gLzN97Eoq';
 const TOSS_TEST = TOSS_CLIENT_KEY.startsWith('test_');
 const PRODUCT_OF = { 100: 'p100', 550: 'p550', 1200: 'p1200' };
+// 시험 키로는 실제 사이트에서 충전을 열지 않음 (시험 결제로 공짜 포인트를 받는 걸 막기). 실제 결제 업체가 붙으면 열림
+const PAY_OPEN = !TOSS_TEST || /^(localhost|127.0.0.1)$/.test(location.hostname);
 function openShop(why) {
   if (IS_APP) { $('#shopMsg').textContent = (why ? why + ' ' : '') + '앱의 포인트 충전은 준비 중이에요.'; $$('#shopSheet [data-add]').forEach(b => b.hidden = true); open('#shopSheet'); return; }
+  if (!PAY_OPEN) { $('#shopMsg').textContent = (why ? why + ' ' : '') + '포인트 충전은 준비 중이에요. 곧 열릴 거예요.'; $$('#shopSheet [data-add]').forEach(b => b.hidden = true); open('#shopSheet'); return; }
   $('#shopMsg').textContent = (why ? why + ' ' : '') + '결제는 토스페이먼츠로 안전하게 처리돼요.' + (TOSS_TEST ? ' (지금은 시험 결제라 실제 돈이 나가지 않아요)' : '');
   $$('#shopSheet [data-add]').forEach(b => b.hidden = false); open('#shopSheet');
 }
 let tossLoading = null;
 const loadToss = () => tossLoading ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://js.tosspayments.com/v2/standard'; sc.onload = ok; sc.onerror = () => { tossLoading = null; no(new Error('toss')); }; document.head.appendChild(sc); });
 $$('#shopSheet [data-add]').forEach(b => { b.hidden = true; b.onclick = async () => {
+  if (!PAY_OPEN) return;
   if (S.anon) { $('#shopSheet').hidden = true; open('#loginSheet'); return; }
   b.disabled = true;
   try {
