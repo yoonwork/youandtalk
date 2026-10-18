@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
-<title>유앤톡 운영</title>
+<title>두런 운영</title>
 <link rel="apple-touch-icon" href="icon-512.png">
 <style>
 :root{--page:#F1F3F7;--card:#fff;--ink:#16203A;--muted:#6B7488;--line:#E3E7EF;--accent:#2F7BFF;--accent-soft:#E6EFFF;--danger:#E5484D;--danger-soft:#FDECEC;--ok:#1F9D63;--ok-soft:#E3F6EC;--lift:0 1px 2px rgba(22,34,66,.06),0 6px 20px rgba(22,34,66,.06)}
@@ -49,7 +49,7 @@ textarea{width:100%;min-height:54px;font:inherit;border:1px solid var(--line);bo
 </head>
 <body>
 <main>
-  <header><h1>유앤톡 운영</h1><button class="plain" id="refresh" hidden>새로고침</button></header>
+  <header><h1>두런 운영</h1><button class="plain" id="refresh" hidden>새로고침</button></header>
   <div id="gate" class="card notice">불러오는 중…</div>
   <div id="app" hidden>
     <div class="stats" id="stats"></div>
@@ -67,7 +67,7 @@ textarea{width:100%;min-height:54px;font:inherit;border:1px solid var(--line);bo
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/+esm';
 const sb = createClient('https://glcchqvtmpgzanbgczxu.supabase.co', 'sb_publishable_Evpm_2vpWPwsuFy3-Jka5Q_rkhRXQnG',
-  { auth: { storageKey: 'youandtalk-auth', persistSession: true, detectSessionInUrl: false } });   // 유앤톡 사이트와 같은 로그인을 씀
+  { auth: { storageKey: 'youandtalk-auth', persistSession: true, detectSessionInUrl: false } });   // 두런 사이트와 같은 로그인을 씀
 const $ = s => document.querySelector(s);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const REASON = { prostitution: '성매매·조건 만남', ad: '광고·외부 앱 유도', abuse: '욕설·성희롱', minor: '미성년자 의심' };
@@ -87,9 +87,9 @@ let tab = 'open';
 async function start() {
   const { data: { session } } = await sb.auth.getSession();
   const gate = $('#gate');
-  if (!session) { gate.innerHTML = '로그인되어 있지 않아요.<br><a href="./">유앤톡</a>에서 운영자 구글 계정으로 로그인한 뒤 이 페이지를 다시 열어 주세요.'; return; }
+  if (!session) { gate.innerHTML = '로그인되어 있지 않아요.<br><a href="./">두런</a>에서 운영자 구글 계정으로 로그인한 뒤 이 페이지를 다시 열어 주세요.'; return; }
   const { data: isAdmin } = await sb.rpc('is_admin');
-  if (!isAdmin) { gate.innerHTML = '이 계정은 운영자가 아니에요.<br><a href="./">유앤톡</a>에서 운영자 계정으로 로그인해 주세요.'; return; }
+  if (!isAdmin) { gate.innerHTML = '이 계정은 운영자가 아니에요.<br><a href="./">두런</a>에서 운영자 계정으로 로그인해 주세요.'; return; }
   gate.hidden = true; $('#app').hidden = false; $('#refresh').hidden = false;
   await refresh();
 }
