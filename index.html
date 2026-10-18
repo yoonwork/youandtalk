@@ -886,7 +886,10 @@ const storage = {
   setItem: (k, v) => { try { localStorage.setItem(k, v); } catch { mem[k] = v; } },
   removeItem: k => { try { localStorage.removeItem(k); } catch { delete mem[k]; } }
 };
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storage, storageKey: 'youandtalk-auth', persistSession: true, detectSessionInUrl: false } });
+// 갤럭시 앱은 로그인 결과를 앱 주소(kr.jsoperation.youandtalk://…)로 받으므로, 토큰 대신 1회용 코드(PKCE)로 받는다.
+// 다른 앱이 같은 주소를 가로채도 이 앱에만 있는 확인값 없이는 로그인할 수 없다.
+const IS_NATIVE = !!window.Capacitor?.isNativePlatform?.();
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { storage, storageKey: 'youandtalk-auth', persistSession: true, detectSessionInUrl: false, flowType: IS_NATIVE ? 'pkce' : 'implicit' } });
 
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
@@ -1094,7 +1097,7 @@ $('#sLogin').onclick = () => {
 // 그 카카오·구글이 이미 다른 회원 계정에 붙어 있으면(다른 기기에서 가입한 회원) 돌아온 뒤 그 계정으로 로그인한다.
 const SNS_KEY = 'youandtalk-sns';
 // 갤럭시 앱(Capacitor) 안에서는 로그인 화면을 바깥 브라우저로 열고, 끝나면 kr.jsoperation.youandtalk://login-callback 으로 앱에 돌아옴
-const IS_APP = !!window.Capacitor?.isNativePlatform?.();
+const IS_APP = IS_NATIVE;
 const APP_CALLBACK = 'kr.jsoperation.youandtalk://login-callback';
 const snsOpts = provider => ({ provider, options: IS_APP ? { redirectTo: APP_CALLBACK, skipBrowserRedirect: true } : { redirectTo: location.origin + location.pathname } });
 async function snsLogin(provider, forceSignIn) {
@@ -1109,7 +1112,7 @@ async function snsLogin(provider, forceSignIn) {
 // supabase-js 가 주소의 토큰을 먼저 읽어야 하므로 getSession(초기화 완료)을 기다린 뒤에 지운다.
 async function handleOAuthReturn(fromApp) {
   const h = new URLSearchParams((fromApp ?? location.hash).replace(/^[#?]/, ''));
-  if (!h.has('access_token') && !h.has('error') && !h.has('error_description')) return;
+  if (!h.has('access_token') && !h.has('code') && !h.has('error') && !h.has('error_description')) return;
   if (fromApp == null) history.replaceState(null, '', location.pathname + location.search);
   // 이 브라우저에서 15분 안에 로그인 버튼을 누른 경우만 받아들임. 아니면 남이 보낸 링크라서 무시.
   let pending = null; try { pending = JSON.parse(storage.getItem(SNS_KEY) || 'null'); } catch {}
@@ -1118,6 +1121,10 @@ async function handleOAuthReturn(fromApp) {
   if (h.has('access_token')) {
     if (!provider) { console.warn('ignored login link that this browser did not start'); return; }
     const { error } = await sb.auth.setSession({ access_token: h.get('access_token'), refresh_token: h.get('refresh_token') || '' });
+    if (error) { toast('로그인에 실패했어요. 다시 시도해 주세요'); return; }
+  } else if (h.has('code') && IS_NATIVE) {
+    if (!provider) { console.warn('ignored login link that this app did not start'); return; }
+    const { error } = await sb.auth.exchangeCodeForSession(h.get('code'));
     if (error) { toast('로그인에 실패했어요. 다시 시도해 주세요'); return; }
   }
   const desc = h.get('error_description') || '';
@@ -1139,6 +1146,13 @@ if (IS_APP) window.Capacitor.Plugins.App.addListener('appUrlOpen', async ({ url 
   const i = url.search(/[#?]/); await handleOAuthReturn(i < 0 ? '' : url.slice(i));
   location.reload();
 });
+// 앱: 약관·방침 같은 새 창 링크는 앱 화면을 바꾸지 않고 브라우저 탭으로 연다 (대화·통화가 끊기지 않게)
+if (IS_APP) document.addEventListener('click', e => {
+  const a = e.target.closest?.('a[target="_blank"]'); if (!a) return;
+  const href = a.getAttribute('href') || ''; if (/^mailto:/i.test(href)) return;
+  e.preventDefault();
+  window.Capacitor.Plugins.Browser.open({ url: new URL(href, 'https://ondatalk.jsoperation.kr/').href }).catch(() => {});
+}, true);
 $('#loginKakao').onclick = () => snsLogin('kakao');
 $('#loginGoogle').onclick = () => snsLogin('google');
 $('#loginNote').textContent = '로그인해도 지금까지의 대화는 그대로 이어져요';
@@ -1202,17 +1216,30 @@ async function playBuy(b, productId) {
     if (t.purchaseState && !/^(1|purchased)$/i.test(String(t.purchaseState))) return toast('결제가 아직 처리 중이에요. 끝나면 자동으로 충전돼요');
     toast('결제를 확인하고 있어요…');
     await playConfirm(productId, t.purchaseToken, false);
-  } catch (e) { if (!/cancel|취소/i.test(String(e?.code) + String(e?.message))) toast('결제창을 열지 못했어요. 잠시 후 다시 해 주세요'); }
+  } catch (e) {
+    const why = String(e?.code) + ' ' + String(e?.message);
+    if (/cancel|취소/i.test(why)) {}
+    else if (/pending/i.test(why)) toast('결제가 아직 처리 중이에요. 끝나면 자동으로 충전돼요');
+    else if (/ALREADY_OWNED|already owned/i.test(why)) { toast('지난 결제를 마무리하고 있어요…'); await playRecover(true); }
+    else toast('결제창을 열지 못했어요. 잠시 후 다시 해 주세요');
+  }
   finally { b.disabled = false; }
 }
-// 앱을 켤 때: 결제는 됐는데 확인이 안 끝난 구매가 있으면 다시 확인 (네트워크가 끊겼던 경우 등)
-async function playRecover() {
-  if (!IS_APP || S.anon || !IAP()) return;
+// 앱을 켜거나 다시 열 때: 결제는 됐는데 확인·마무리가 안 끝난 구매가 있으면 다시 확인 (네트워크 끊김, 대기 결제 완료 등)
+let recovering = false;
+async function playRecover(loud) {
+  if (!IS_APP || S.anon || !IAP() || recovering) return;
+  recovering = true;
   try {
-    const { transactions } = await IAP().getUnfinishedTransactions();
-    for (const t of transactions || []) if (t.purchaseToken && PRODUCT_OF_ID.has(t.productIdentifier)) await playConfirm(t.productIdentifier, t.purchaseToken, true);
+    const { purchases } = await IAP().getPurchases({ productType: 'inapp' });
+    for (const t of purchases || []) {
+      if (!t.purchaseToken || !PRODUCT_OF_ID.has(t.productIdentifier) || !/^(1|purchased)$/i.test(String(t.purchaseState ?? '1'))) continue;
+      await playConfirm(t.productIdentifier, t.purchaseToken, !loud);
+    }
   } catch {}
+  finally { recovering = false; }
 }
+if (IS_APP) window.Capacitor.Plugins.App.addListener('resume', () => playRecover());
 const PRODUCT_OF_ID = new Set(Object.values(PRODUCT_OF));
 // 결제창에서 돌아왔을 때: 서버에 승인을 맡기고 포인트를 새로 고침
 async function handlePayReturn() {
@@ -2183,6 +2210,12 @@ if (/KAKAOTALK/i.test(navigator.userAgent)) {
 (async () => {
   try {
     await handleOAuthReturn();
+    // 앱: 로그인하는 동안 안드로이드가 앱을 껐다면, 돌아온 주소가 앱을 새로 여는 주소로 들어온다
+    if (IS_APP) {
+      const launch = await window.Capacitor.Plugins.App.getLaunchUrl().catch(() => null);
+      const u = launch?.url || '';
+      if (u.startsWith(APP_CALLBACK) && storage.getItem(SNS_KEY)) { const i = u.search(/[#?]/); await handleOAuthReturn(i < 0 ? '' : u.slice(i)); }
+    }
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
       S.uid = session.user.id; S.anon = !isMember(session.user);
