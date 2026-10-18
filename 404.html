@@ -546,7 +546,7 @@ body,.app,#v-chat{background:var(--page)}
 
         <p style="margin:10px 0 0;font-size:13px;color:#7A8499;text-align:center"><a href="terms.html" target="_blank" style="color:inherit">이용약관</a> · <a href="privacy.html" target="_blank" style="color:inherit">개인정보 처리방침</a> 전문 보기</p>
         <button class="cta" id="verifyBtn" disabled>다음</button>
-        <small class="gate-foot">나이를 속이면 이용이 정지될 수 있어요 · 앱에서는 휴대폰 인증으로 확인해요</small>
+        <small class="gate-foot">나이를 속이면 이용이 정지될 수 있어요</small>
         <div style="display:flex;gap:10px;align-items:center;margin:16px 0 0;padding:10px 12px;border:1px solid var(--yh-line,#F2C4C4);border-radius:12px;background:var(--yh-bg,#FFF6F6);font-size:12px;line-height:1.5;color:var(--yh-ink,#7A3B3B);text-align:left"><span aria-label="19세 미만 이용 불가" style="flex:none;display:grid;place-items:center;width:34px;height:34px;border:3px solid #E0312B;border-radius:50%;color:#E0312B;font-weight:800;font-size:14px;background:#fff">19</span><span>이 정보내용은 청소년유해매체물로서 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」 및 「청소년 보호법」에 따라 19세 미만의 청소년이 이용할 수 없습니다.</span></div>
       </div>
       <div class="gate-main blocked" id="gateBlocked" hidden>
@@ -663,7 +663,7 @@ body,.app,#v-chat{background:var(--page)}
         <li>문의: <a href="mailto:youandtalk@jsoperation.kr" style="color:inherit">youandtalk@jsoperation.kr</a> · <a href="terms.html" target="_blank" style="color:inherit">이용약관</a> · <a href="privacy.html" target="_blank" style="color:inherit">개인정보 처리방침</a></li>
       </ul>
       <div style="display:flex;gap:10px;align-items:center;margin:16px 0 0;padding:10px 12px;border:1px solid var(--yh-line,#F2C4C4);border-radius:12px;background:var(--yh-bg,#FFF6F6);font-size:12px;line-height:1.5;color:var(--yh-ink,#7A3B3B);text-align:left"><span aria-label="19세 미만 이용 불가" style="flex:none;display:grid;place-items:center;width:34px;height:34px;border:3px solid #E0312B;border-radius:50%;color:#E0312B;font-weight:800;font-size:14px;background:#fff">19</span><span>이 정보내용은 청소년유해매체물로서 「정보통신망 이용촉진 및 정보보호 등에 관한 법률」 및 「청소년 보호법」에 따라 19세 미만의 청소년이 이용할 수 없습니다.</span></div>
-      <p class="biz" style="margin:14px 0 0;font-size:11.5px;line-height:1.6;color:var(--muted)">상호 제이에스 오퍼레이션 · 대표자 윤지성 · 사업자등록번호 809-09-03009 · 주소 충청남도 논산시 해월로144번길 1, 101-비동 15호 · 이메일 youandtalk@jsoperation.kr · 결제 대행 토스페이먼츠(주)</p>
+      <p class="biz" style="margin:14px 0 0;font-size:11.5px;line-height:1.6;color:var(--muted)">상호 제이에스 오퍼레이션 · 대표자 윤지성 · 사업자등록번호 809-09-03009 · 주소 충청남도 논산시 해월로144번길 1, 101-비동 15호 · 이메일 youandtalk@jsoperation.kr</p>
     </div>
   </main>
 
@@ -1155,7 +1155,7 @@ const PRODUCT_OF = { 100: 'p100', 550: 'p550', 1200: 'p1200' };
 // 시험 키로는 실제 사이트에서 충전을 열지 않음 (시험 결제로 공짜 포인트를 받는 걸 막기). 실제 결제 업체가 붙으면 열림
 const PAY_OPEN = !TOSS_TEST || /^(localhost|127.0.0.1)$/.test(location.hostname);
 function openShop(why) {
-  if (IS_APP) { $('#shopMsg').textContent = (why ? why + ' ' : '') + '앱의 포인트 충전은 준비 중이에요.'; $$('#shopSheet [data-add]').forEach(b => b.hidden = true); open('#shopSheet'); return; }
+  if (IS_APP) { $('#shopMsg').textContent = (why ? why + ' ' : '') + '결제는 구글 플레이로 안전하게 처리돼요.'; $$('#shopSheet [data-add]').forEach(b => b.hidden = false); open('#shopSheet'); return; }
   if (!PAY_OPEN) { $('#shopMsg').textContent = (why ? why + ' ' : '') + '포인트 충전은 준비 중이에요. 곧 열릴 거예요.'; $$('#shopSheet [data-add]').forEach(b => b.hidden = true); open('#shopSheet'); return; }
   $('#shopMsg').textContent = (why ? why + ' ' : '') + '결제는 토스페이먼츠로 안전하게 처리돼요.' + (TOSS_TEST ? ' (지금은 시험 결제라 실제 돈이 나가지 않아요)' : '');
   $$('#shopSheet [data-add]').forEach(b => b.hidden = false); open('#shopSheet');
@@ -1163,8 +1163,9 @@ function openShop(why) {
 let tossLoading = null;
 const loadToss = () => tossLoading ||= new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://js.tosspayments.com/v2/standard'; sc.onload = ok; sc.onerror = () => { tossLoading = null; no(new Error('toss')); }; document.head.appendChild(sc); });
 $$('#shopSheet [data-add]').forEach(b => { b.hidden = true; b.onclick = async () => {
-  if (!PAY_OPEN) return;
   if (S.anon) { $('#shopSheet').hidden = true; open('#loginSheet'); return; }
+  if (IS_APP) return playBuy(b, PRODUCT_OF[b.dataset.add]);
+  if (!PAY_OPEN) return;
   b.disabled = true;
   try {
     const { data, error } = await sb.rpc('create_order', { p_product: PRODUCT_OF[b.dataset.add] });
@@ -1178,6 +1179,41 @@ $$('#shopSheet [data-add]').forEach(b => { b.hidden = true; b.onclick = async ()
   } catch (e) { if (!/USER_CANCEL|취소/.test(e?.code + e?.message)) toast('결제창을 열지 못했어요. 잠시 후 다시 해 주세요'); }
   finally { b.disabled = false; }
 }; });
+// ── 갤럭시 앱: 구글 플레이 결제 (021_play_billing.sql, 함수 play-confirm) ──
+// 구글 결제 → 서버가 구글에 직접 확인하고 포인트를 넣음 → 확인되면 구매를 '소비'해서 다시 살 수 있게 함
+const IAP = () => window.Capacitor?.Plugins?.NativePurchases;
+async function playConfirm(productId, purchaseToken, quiet) {
+  const { data, error } = await sb.functions.invoke('play-confirm', { body: { productId, purchaseToken } });
+  if (error || !data || (data.status !== 'paid' && data.status !== 'already')) {
+    if (!quiet) toast('결제 확인이 늦어지고 있어요. 앱을 다시 열면 자동으로 다시 확인해요');
+    return false;
+  }
+  try { await IAP().consumePurchase({ purchaseToken }); } catch {}
+  await refreshMe();
+  if (data.status === 'paid') toast(data.points + 'P를 충전했어요' + (data.test ? ' (시험 결제)' : ''));
+  return true;
+}
+async function playBuy(b, productId) {
+  if (!IAP()) return toast('이 앱 버전에서는 충전할 수 없어요. 앱을 업데이트해 주세요');
+  b.disabled = true;
+  try {
+    const t = await IAP().purchaseProduct({ productIdentifier: productId, productType: 'inapp', appAccountToken: S.uid, isConsumable: false, autoAcknowledgePurchases: false });
+    if (!t?.purchaseToken) return;
+    if (t.purchaseState && !/^(1|purchased)$/i.test(String(t.purchaseState))) return toast('결제가 아직 처리 중이에요. 끝나면 자동으로 충전돼요');
+    toast('결제를 확인하고 있어요…');
+    await playConfirm(productId, t.purchaseToken, false);
+  } catch (e) { if (!/cancel|취소/i.test(String(e?.code) + String(e?.message))) toast('결제창을 열지 못했어요. 잠시 후 다시 해 주세요'); }
+  finally { b.disabled = false; }
+}
+// 앱을 켤 때: 결제는 됐는데 확인이 안 끝난 구매가 있으면 다시 확인 (네트워크가 끊겼던 경우 등)
+async function playRecover() {
+  if (!IS_APP || S.anon || !IAP()) return;
+  try {
+    const { transactions } = await IAP().getUnfinishedTransactions();
+    for (const t of transactions || []) if (t.purchaseToken && PRODUCT_OF_ID.has(t.productIdentifier)) await playConfirm(t.productIdentifier, t.purchaseToken, true);
+  } catch {}
+}
+const PRODUCT_OF_ID = new Set(Object.values(PRODUCT_OF));
 // 결제창에서 돌아왔을 때: 서버에 승인을 맡기고 포인트를 새로 고침
 async function handlePayReturn() {
   const q = new URLSearchParams(location.search); const st = q.get('pay'); if (!st) return;
@@ -2046,7 +2082,7 @@ $('#writeConfirm').onclick = async () => {
 
 // ── 시작 ─────────────────────────────────────────────────
 async function afterLogin() {
-  await refreshMe(); setLoginUI(); listenMine(); joinLobby(); renderSide(); handlePayReturn();
+  await refreshMe(); setLoginUI(); listenMine(); joinLobby(); renderSide(); handlePayReturn(); playRecover();
   try { await sb.realtime.setAuth(); } catch {}         // 비공개 방 채널(입력 중·통화 신호)에 내 로그인 정보를 씀
   await loadRooms();
   goTab('match');
