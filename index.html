@@ -533,9 +533,13 @@ body,.app,#v-chat{background:var(--page)}
         </section>
 
         <section class="gsec">
-          <h2>약관 동의</h2>
-          <label class="sub" for="birth">출생연도</label>
+          <h2>출생연도</h2>
+          <label class="sub" for="birth">만 19세 이상만 이용할 수 있어요</label>
           <input class="yinput" id="birth" inputmode="numeric" maxlength="4" placeholder="예: 1995" autocomplete="off">
+        </section>
+
+        <section class="gsec">
+          <h2>약관 동의</h2>
           <button class="allagree" id="allAgree" aria-pressed="false"><span class="ck"></span>모두 동의해요</button>
           <ul class="agrees">
             <li><button class="ag" data-ag="terms" aria-pressed="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg><span><u>이용약관 동의</u> (필수)</span></button></li>
@@ -561,7 +565,7 @@ body,.app,#v-chat{background:var(--page)}
   <!-- 매칭 탭 -->
   <main class="view" id="v-match" hidden>
     <div class="scroll pad">
-      <div class="demo">테스트 버전 · 실제 사람과 연결돼요</div>
+      
       <div class="top">
         <div class="brand"><svg width="34" height="34"><use href="#logo"/></svg>온다톡</div>
         <button class="pts" id="ptsBtn" aria-label="포인트 충전"><i>P</i><span class="pts-n">50</span></button>
@@ -1055,7 +1059,8 @@ function setLoginUI() {
 }
 function needLogin(what) {
   if (!S.anon) return true;
-  $('#loginMsg').textContent = what + '은(는) 로그인한 사람만 쓸 수 있어요. 일반 채팅은 로그인 없이도 돼요.'; open('#loginSheet'); return false;
+  const c = what.charCodeAt(what.length - 1); const jo = c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 ? '은' : '는';
+  $('#loginMsg').textContent = what + jo + ' 로그인한 사람만 쓸 수 있어요. 일반 채팅은 로그인 없이도 돼요.'; open('#loginSheet'); return false;
 }
 $('#loginCardBtn').onclick = () => { if (S.anon) open('#loginSheet'); };
 // 로그아웃 / 처음부터 다시 시작 / 회원 탈퇴: 서버 세션을 끊고 페이지를 새로 열면 첫 입장 화면으로 돌아감.
@@ -1104,7 +1109,10 @@ async function snsLogin(provider, forceSignIn) {
   $('#loginSheet').hidden = true;
   storage.setItem(SNS_KEY, JSON.stringify({ p: provider, t: Date.now() }));
   const { data, error } = S.uid && !forceSignIn ? await sb.auth.linkIdentity(snsOpts(provider)) : await sb.auth.signInWithOAuth(snsOpts(provider));
-  if (!error && IS_APP && data?.url) await window.Capacitor.Plugins.Browser.open({ url: data.url });
+  if (!error && IS_APP && data?.url) {
+    try { await window.Capacitor.Plugins.Browser.open({ url: data.url }); }
+    catch { storage.removeItem(SNS_KEY); toast('로그인 화면을 열지 못했어요. 잠시 후 다시 해 주세요'); return new Error('browser'); }
+  }
   if (error) { storage.removeItem(SNS_KEY); toast(/not enabled|unsupported|provider/i.test(error.message) ? (provider === 'kakao' ? '카카오' : '구글') + ' 로그인은 곧 열려요' : errMsg(error)); }
   return error;
 }
@@ -1226,18 +1234,19 @@ async function playBuy(b, productId) {
   finally { b.disabled = false; }
 }
 // 앱을 켜거나 다시 열 때: 결제는 됐는데 확인·마무리가 안 끝난 구매가 있으면 다시 확인 (네트워크 끊김, 대기 결제 완료 등)
-let recovering = false;
+let recovering = null;   // 진행 중인 복구 (겹치면 끝날 때까지 기다렸다가 필요하면 한 번 더)
 async function playRecover(loud) {
-  if (!IS_APP || S.anon || !IAP() || recovering) return;
-  recovering = true;
-  try {
-    const { purchases } = await IAP().getPurchases({ productType: 'inapp' });
+  if (!IS_APP || S.anon || !IAP()) return;
+  if (recovering) { await recovering.catch(() => {}); if (!loud) return; }
+  recovering = (async () => {
+    // 이 계정으로 산 것만 (같은 폰을 다른 사람이 쓴 경우 남의 결제는 건드리지 않음)
+    const { purchases } = await IAP().getPurchases({ productType: 'inapp', appAccountToken: S.uid });
     for (const t of purchases || []) {
       if (!t.purchaseToken || !PRODUCT_OF_ID.has(t.productIdentifier) || !/^(1|purchased)$/i.test(String(t.purchaseState ?? '1'))) continue;
       await playConfirm(t.productIdentifier, t.purchaseToken, !loud);
     }
-  } catch {}
-  finally { recovering = false; }
+  })();
+  try { await recovering; } catch {} finally { recovering = null; }
 }
 if (IS_APP) window.Capacitor.Plugins.App.addListener('resume', () => playRecover());
 const PRODUCT_OF_ID = new Set(Object.values(PRODUCT_OF));
