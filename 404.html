@@ -1699,7 +1699,7 @@ const CALL_RULES = {
 };
 // 통화 규칙(서버 call_allowed): 랜덤 상대와는 서로 메시지를 3개 이상씩 주고받은 뒤에. 친구는 바로.
 const CALL_RULE_MSG = { NEED_MORE_CHAT: '서로 메시지를 3개 이상씩 주고받은 뒤에 통화할 수 있어요', ROOM_ENDED: '끝난 대화에서는 통화할 수 없어요',
-  NET: '통화 연결을 준비하지 못했어요. 잠시 후 다시 걸어 주세요' };
+  NET: '통화 연결을 준비하지 못했어요. 잠시 후 다시 걸어 주세요', RATE_LIMITED: '통화를 너무 자주 걸었어요. 10분 뒤에 다시 걸어 주세요' };
 async function askCall(face) {
   const c = S.rooms.get(S.cur); if (!c || c.ended) return toast('끝난 대화에서는 통화할 수 없어요');
   const { data: rule, error } = await sb.rpc('call_allowed', { p_room: c.id, p_face: face });
@@ -1722,7 +1722,7 @@ $('#voiceBtn').onclick = () => askCall(false); $('#faceBtn').onclick = () => ask
 //            거절 decline / 통화 중 busy / 걸다가 취소 cancel / 끊기 end / 카메라 끔 cam
 // 통화 기록은 건 사람이 끝날 때 log_call 로 대화방에 남긴다 ("보이스톡 03:12").
 const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
-// 통화 중계 서버(Cloudflare TURN) 출입증: 서버 함수 turn-credentials 가 3시간짜리를 준다.
+// 통화 중계 서버(Cloudflare TURN) 출입증: 서버 함수 turn-credentials 가 30분짜리를 준다 (사용자당 10분에 20번까지).
 // 받으면 모든 통화를 중계 서버로만 연결 → 상대가 내 IP 주소를 알 수 없음.
 // 키를 아직 안 넣었을 때(TURN_NOT_CONFIGURED)만 예전처럼 바로 연결. 그 밖의 실패는 IP 가 드러나지 않게 통화를 막음.
 const iceCache = new Map();
@@ -1792,6 +1792,8 @@ function showCallView(state) {
   $('#muteBtn').setAttribute('aria-pressed', 'false'); $('#camOffBtn').setAttribute('aria-pressed', 'false');
   const lv = $('#localVideo'); lv.srcObject = face ? c.stream : null; if (face) lv.play().catch(() => {});
   $('#callView').hidden = false;
+  // 앱: 통화 화면이 뜰 때(앱이 앞에 있을 때) 포그라운드 서비스 시작 → 다른 앱으로 가도 마이크 유지
+  window.Capacitor?.Plugins?.CallService?.start({ video: !!face }).catch(() => {});
 }
 
 // 걸기
@@ -1851,6 +1853,7 @@ function finishCall(result, msg, tell = true) {
   if (tell) sendCall(c.room, c.cid, c.role === 'caller' && !c.pc ? 'cancel' : 'end');
   try { c.pc?.close(); } catch {}
   c.stream.getTracks().forEach(t => t.stop());
+  window.Capacitor?.Plugins?.CallService?.stop().catch(() => {});
   ['#remoteAudio', '#remoteVideo', '#localVideo'].forEach(x => { $(x).srcObject = null; });
   $('#callView').hidden = true;
   const sec = c.started ? Math.round((Date.now() - c.started) / 1000) : 0;
